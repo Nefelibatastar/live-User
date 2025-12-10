@@ -49,7 +49,7 @@
       </div>
 
       <!-- 没有流地址提示 -->
-      <div v-if="!streamUrl" class="empty-tip">
+      <!-- <div v-if="!streamUrl" class="empty-tip">
         <div class="tip-content">
           <div class="tip-title">未找到流地址</div>
           <div class="tip-subtitle">请通过URL参数传入有效的直播地址</div>
@@ -60,7 +60,80 @@
             <p><code>?flv=FLV地址</code></p>
           </div>
         </div>
+      </div> -->
+
+      <!-- 加载中提示 -->
+      <div v-if="isLoading" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在加载视频流...</div>
       </div>
+    </div>
+  </div>
+</template>
+
+<template>
+  <div class="player-page">
+    <!-- 播放容器 -->
+    <div class="player-container">
+      <!-- M3U8播放器容器 -->
+      <div v-if="isM3u8" class="video-js-container">
+        <video id="videoPlayer" class="video-js vjs-default-skin" controls playsinline></video>
+
+        <!-- 自定义播放按钮覆盖层（M3U8）- 未初始化时显示 -->
+        <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
+          <div class="play-button" @click="playM3u8">
+            <div class="play-icon"></div>
+          </div>
+        </div>
+
+        <!-- M3U8错误提示 -->
+        <div v-if="showM3u8Error" class="error-overlay">
+          <div class="error-content">
+            <div class="error-title">播放失败</div>
+            <div class="error-message">{{ m3u8ErrorMessage }}</div>
+            <button class="retry-button" @click="retryM3u8">重试</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FLV播放器容器 -->
+      <div v-if="isFlv" class="flv-container">
+        <video id="videoElement" crossOrigin="anonymous" controls playsinline @click="playFlv"></video>
+
+        <!-- 自定义播放按钮覆盖层（FLV）- 未播放时显示 -->
+        <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
+          <div class="play-button" @click="playFlv">
+            <div class="play-icon"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 等待播放提示（初始状态） -->
+      <div v-if="!isM3u8 && !isFlv && streamUrl" class="empty-tip">
+        <div class="tip-content">
+          <div class="tip-title">准备播放</div>
+          <div class="tip-subtitle">正在准备播放器...</div>
+          <div class="tip-info">
+            <p><strong>流地址：</strong>{{ streamUrl }}</p>
+            <p><strong>指定格式：</strong>{{ streamType || '未指定' }}</p>
+            <p><strong>状态：</strong>等待用户点击播放</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 没有流地址提示 -->
+      <!-- <div v-if="!streamUrl" class="empty-tip">
+        <div class="tip-content">
+          <div class="tip-title">未找到流地址</div>
+          <div class="tip-subtitle">请通过URL参数传入有效的直播地址</div>
+          <div class="tip-info">
+            <p>支持的参数：</p>
+            <p><code>?id=直播ID</code></p>
+            <p><code>?id=直播ID&type=flv</code> (指定FLV格式)</p>
+            <p><code>?id=直播ID&type=m3u8</code> (指定M3U8格式)</p>
+          </div>
+        </div>
+      </div> -->
 
       <!-- 加载中提示 -->
       <div v-if="isLoading" class="loading-overlay">
@@ -82,6 +155,7 @@ export default {
     return {
       streamUrl: "",
       proxyUrl: "",
+      id: '',
       detectedFormat: null,
       isM3u8: false,
       isFlv: false,
@@ -97,6 +171,10 @@ export default {
       reconnectCount: 0,
       maxReconnect: 5,
       timerId: null,
+
+      // 新增字段
+      streamData: null,  // 接口返回的完整数据
+      streamType: null,  // 从URL参数获取的流类型：'flv' 或 'm3u8'
     };
   },
 
@@ -107,62 +185,177 @@ export default {
 
   methods: {
     // 从URL参数初始化
-    initFromUrlParams() {
+    async initFromUrlParams() {
       console.log('=== 开始解析URL参数 ===');
 
       // 获取URL参数
       const urlParams = new URLSearchParams(window.location.search);
-      const flvParam = urlParams.get('flv');
-      const m3u8Param = urlParams.get('m3u8');
-      const urlParam = urlParams.get('url');
+      this.id = urlParams.get('id');
+      this.streamType = urlParams.get('type'); // 获取type参数
+      
+      console.log('直播ID:', this.id);
+      console.log('指定格式:', this.streamType);
+      
+      if (!this.id) {
+        console.warn('未找到直播ID参数');
+        this.$Message.error('未找到直播ID参数');
+        return;
+      }
 
-      // 优先使用特定格式参数，然后是通用参数
-      let streamUrl = flvParam || m3u8Param || urlParam;
+      // 显示加载状态
+      this.isLoading = true;
 
-      if (streamUrl) {
-        console.log('原始流地址:', streamUrl);
+      try {
+        // 调用接口获取流地址信息
+        await this.getStreamDataById(this.id);
+      } catch (error) {
+        console.error('获取流地址信息失败:', error);
+        this.isLoading = false;
+        this.$Message.error('获取直播信息失败，请检查网络连接');
+      }
+    },
 
-        // 解码URL参数
-        try {
-          // 尝试解码（可能被编码多次）
-          while (streamUrl.includes('%')) {
-            const decoded = decodeURIComponent(streamUrl);
-            if (decoded === streamUrl) break;
-            streamUrl = decoded;
-          }
-        } catch (e) {
-          console.warn('URL参数解码失败:', e);
-        }
+    // 根据ID获取流地址信息
+    async getStreamDataById(id) {
+      console.log('调用接口获取流地址信息，ID:', id);
 
-        console.log('解码后流地址:', streamUrl);
-        this.streamUrl = streamUrl;
+      try {
+        // 这里使用您的接口调用方式
+        const res = await this.$api.getById({ id: id });
 
-        // 处理代理地址
-        this.proxyUrl = this.getProxyUrl(streamUrl);
-        console.log('代理地址:', this.proxyUrl);
+        if (res.code === 200) {
+          this.streamData = res.data;
+          console.log('接口返回数据:', res.data);
 
-        // 检测流格式并设置对应的播放器类型
-        this.detectedFormat = this.detectStreamType(streamUrl);
-        console.log('检测到的格式:', this.detectedFormat);
-
-        // 根据检测到的格式设置播放器类型
-        if (this.detectedFormat === 'm3u8') {
-          this.isM3u8 = true;
-          this.isFlv = false;
-          // 提前初始化video.js容器，但不要加载视频
-          this.$nextTick(() => {
-            this.initM3u8PlayerContainer();
-          });
-        } else if (this.detectedFormat === 'flv') {
-          this.isFlv = true;
-          this.isM3u8 = false;
-          // FLV播放器等待用户点击
+          // 根据返回的数据结构解析流地址
+          await this.parseStreamData(this.streamData);
         } else {
-          console.warn('无法识别的流格式');
+          // throw new Error(res.message || '接口返回错误');
+        }
+      } catch (error) {
+        // this.$Message.error('获取直播信息失败: ' + error.message);
+        this.isLoading = false;
+        throw error;
+      }
+    },
+
+    // 解析流数据 - 根据type参数选择对应格式
+    async parseStreamData(data) {
+      console.log('开始解析流数据，指定格式:', this.streamType);
+      
+      // 根据type参数选择对应的流地址
+      let streamUrl = '';
+      
+      // 如果指定了type参数，使用指定的格式
+      if (this.streamType) {
+        if (this.streamType.toLowerCase() === 'flv' && data.pullFlvUrl) {
+          streamUrl = data.pullFlvUrl;
+          this.detectedFormat = 'flv';
+          console.log('使用指定的FLV地址:', streamUrl);
+        } else if (this.streamType.toLowerCase() === 'm3u8' && data.pullM3u8Url) {
+          streamUrl = data.pullM3u8Url;
+          this.detectedFormat = 'm3u8';
+          console.log('使用指定的M3U8地址:', streamUrl);
+        } else if (this.streamType.toLowerCase() === 'flv' && !data.pullFlvUrl) {
+          console.error('指定了FLV格式，但接口未返回FLV地址');
+          this.$Message.error('该直播没有FLV格式的播流地址');
+          this.isLoading = false;
+          return;
+        } else if (this.streamType.toLowerCase() === 'm3u8' && !data.pullM3u8Url) {
+          console.error('指定了M3U8格式，但接口未返回M3U8地址');
+          this.$Message.error('该直播没有M3U8格式的播流地址');
+          this.isLoading = false;
+          return;
         }
       } else {
-        console.warn('未找到有效的流地址参数');
+        // 如果没有指定type参数，保持原来的逻辑：优先使用FLV，其次M3U8
+        if (data.pullFlvUrl) {
+          streamUrl = data.pullFlvUrl;
+          this.detectedFormat = 'flv';
+          console.log('未指定格式，默认使用FLV地址:', streamUrl);
+        } else if (data.pullM3u8Url) {
+          streamUrl = data.pullM3u8Url;
+          this.detectedFormat = 'm3u8';
+          console.log('未指定格式，使用M3U8地址:', streamUrl);
+        } else if (data.pushRtmpUrl) {
+          streamUrl = '';
+        } else {
+          // 尝试从其他字段解析
+          streamUrl = this.findStreamUrlInData(data);
+        }
       }
+
+      if (!streamUrl) {
+        console.error('未找到有效的流地址');
+        this.isLoading = false;
+        this.$Message.error('未找到有效的流地址');
+        return;
+      }
+
+      console.log('最终使用的流地址:', streamUrl);
+      console.log('使用的格式:', this.detectedFormat);
+
+      this.streamUrl = streamUrl;
+
+      // 处理代理地址
+      this.proxyUrl = this.getProxyUrl(streamUrl);
+      console.log('代理地址:', this.proxyUrl);
+
+      // 根据检测到的格式设置播放器类型
+      if (this.detectedFormat === 'm3u8') {
+        this.isM3u8 = true;
+        this.isFlv = false;
+        // 提前初始化video.js容器，但不要加载视频
+        this.$nextTick(() => {
+          this.initM3u8PlayerContainer();
+        });
+      } else if (this.detectedFormat === 'flv') {
+        this.isFlv = true;
+        this.isM3u8 = false;
+        // FLV播放器等待用户点击
+      } else if (this.detectedFormat === 'rtmp') {
+        console.warn('RTMP格式可能需要特殊处理');
+        // 您可以在这里添加RTMP播放器初始化逻辑
+      }
+
+      this.isLoading = false;
+    },
+
+    // 从数据中查找流地址
+    findStreamUrlInData(data) {
+      console.log('尝试从数据中查找流地址');
+
+      // 遍历所有字段，查找包含常见流地址格式的字段
+      // const streamKeywords = ['url', 'stream', 'live', 'video', 'flv', 'm3u8'];
+      const streamKeywords = ['flv', 'm3u8'];
+
+      for (const key in data) {
+        const value = data[key];
+
+        // 只处理字符串类型
+        if (typeof value === 'string' && value.trim()) {
+          const lowerValue = value.toLowerCase();
+
+          // 检查是否包含流地址特征
+          for (const keyword of streamKeywords) {
+            if (lowerValue.includes(keyword) &&
+              (lowerValue.includes('http://') || lowerValue.includes('https://'))) {
+              console.log(`在字段 ${key} 中找到可能的流地址:`, value);
+
+              // 进一步检测格式
+              if (lowerValue.includes('.flv') || lowerValue.includes('flv')) {
+                this.detectedFormat = 'flv';
+              } else if (lowerValue.includes('.m3u8') || lowerValue.includes('m3u8')) {
+                this.detectedFormat = 'm3u8';
+              }
+
+              return value;
+            }
+          }
+        }
+      }
+
+      return null;
     },
 
     // 处理代理地址
@@ -176,15 +369,6 @@ export default {
         return url;
       }
       return url;
-    },
-
-    // 识别流格式
-    detectStreamType(url) {
-      if (!url) return null;
-      const lowerUrl = url.toLowerCase();
-      if (lowerUrl.includes(".m3u8") || lowerUrl.includes("m3u8")) return "m3u8";
-      if (lowerUrl.includes(".flv") || lowerUrl.includes("flv")) return "flv";
-      return null;
     },
 
     // 初始化M3U8播放器容器（不加载视频）

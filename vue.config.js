@@ -1,6 +1,7 @@
 
 module.exports = {
   devServer: {
+    historyApiFallback: true,
     proxy: {
       // 匹配以/api-stream开头的请求，转发到目标地址
       '/api-stream': {
