@@ -185,7 +185,7 @@ export default {
     // 微信浏览器授权逻辑
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
-    console.log('code',urlParams,code)
+    console.log('code', urlParams, code)
 
     if (this.isWechatBrowser()) {
       if (code) {
@@ -196,7 +196,7 @@ export default {
         this.wechatAuth();
       }
     } else {
-      console.log('非微信浏览器，不进行授权');
+      // console.log('非微信浏览器，不进行授权');
     }
   },
   methods: {
@@ -232,7 +232,7 @@ export default {
       const code = urlParams.get('code');
       const state = urlParams.get('state');
       const storedState = localStorage.getItem('wechat_auth_state');
-      console.log('??',code,state,storedState)
+      console.log('??', code, state, storedState)
       // 验证state防止CSRF攻击
       if (state && state === storedState) {
         localStorage.removeItem('wechat_auth_state');
@@ -265,11 +265,8 @@ export default {
       this.id = urlParams.get('id');
       this.streamType = urlParams.get('type'); // 获取type参数
 
-      console.log('直播ID:', this.id);
-      console.log('指定格式:', this.streamType);
 
       if (!this.id) {
-        console.warn('未找到直播ID参数');
         this.$Message.error('未找到直播ID参数');
         return;
       }
@@ -323,18 +320,14 @@ export default {
         if (this.streamType.toLowerCase() === 'flv' && data.pullFlvUrl) {
           streamUrl = data.pullFlvUrl;
           this.detectedFormat = 'flv';
-          console.log('使用指定的FLV地址:', streamUrl);
         } else if (this.streamType.toLowerCase() === 'm3u8' && data.pullM3u8Url) {
           streamUrl = data.pullM3u8Url;
           this.detectedFormat = 'm3u8';
-          console.log('使用指定的M3U8地址:', streamUrl);
         } else if (this.streamType.toLowerCase() === 'flv' && !data.pullFlvUrl) {
-          console.error('指定了FLV格式，但接口未返回FLV地址');
           this.$Message.error('该直播没有FLV格式的播流地址');
           this.isLoading = false;
           return;
         } else if (this.streamType.toLowerCase() === 'm3u8' && !data.pullM3u8Url) {
-          console.error('指定了M3U8格式，但接口未返回M3U8地址');
           this.$Message.error('该直播没有M3U8格式的播流地址');
           this.isLoading = false;
           return;
@@ -363,10 +356,6 @@ export default {
         this.$Message.error('未找到有效的流地址');
         return;
       }
-
-      console.log('最终使用的流地址:', streamUrl);
-      console.log('使用的格式:', this.detectedFormat);
-
       this.streamUrl = streamUrl;
 
       // 处理代理地址
@@ -431,18 +420,19 @@ export default {
     },
 
     // 处理代理地址
+    // getProxyUrl(url) {
+    //   if (!url) return "";
+    //   const targetHost = "http://live.hbjcws.com.cn";
+    //   // 将原始跨域地址转换为代理路径
+    //   if (url.startsWith(targetHost)) {
+    //     // 例如：http://live.hbjcws.com.cn/xxx → /api/xxx
+    //     return url.replace(targetHost, "/api");
+    //   }
+    //   return url;
+    // },
     getProxyUrl(url) {
-      if (!url) return "";
-      // const targetHost = "http://live.hbjcws.com.cn";
-      // if (url.startsWith(targetHost)) {
-      //   return url.replace(targetHost, "/api");
-      // }
-      // if (url.startsWith("/api")) {
-        return url;
-      // }
-      // return targetHost;
+      return url || ''; // 直接返回原始地址，不做任何代理转换
     },
-
     // 初始化M3U8播放器容器（不加载视频）
     initM3u8PlayerContainer() {
       console.log('初始化M3U8播放器容器');
@@ -540,7 +530,7 @@ export default {
 
       // 设置视频源并加载
       this.vjsPlayer.src({
-        src: this.proxyUrl,
+        src: this.streamUrl, // 直接使用原始地址
         type: 'application/x-mpegURL'
       });
 
@@ -632,10 +622,10 @@ export default {
             type: 'flv',
             isLive: true,
             hasAudio: true,
-            url: this.proxyUrl,
+            url: this.streamUrl, // 直接使用原始地址
             enableWorker: false,
           }, {
-            cors: true,
+            cors: true, // 允许跨域请求
             enableStashBuffer: false,
           });
 
