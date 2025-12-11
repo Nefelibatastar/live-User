@@ -181,9 +181,81 @@ export default {
   mounted() {
     console.log('页面加载，初始化参数');
     this.initFromUrlParams();
-  },
 
+    // 微信浏览器授权逻辑
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    console.log('code',urlParams,code)
+
+    if (this.isWechatBrowser()) {
+      if (code) {
+        // 有code参数，说明是授权回调，处理用户信息
+        this.handleWechatCallback();
+      } else {
+        // 没有code参数，且是微信浏览器，触发授权
+        this.wechatAuth();
+      }
+    } else {
+      console.log('非微信浏览器，不进行授权');
+    }
+  },
   methods: {
+    // 检测是否是微信浏览器
+    isWechatBrowser() {
+      const userAgent = navigator.userAgent.toLowerCase();
+      return userAgent.includes('micromessenger');
+    },
+    // 微信授权登录主方法
+    wechatAuth() {
+      // 公众号appid（请替换为你的实际appid）
+      const appid = 'wx9e05ef34b2bc54b6';
+      // 授权成功后的回调地址（需在公众号后台配置）
+      const redirectUri = encodeURIComponent(window.location.href);
+      // 授权scope（snsapi_userinfo用于获取用户信息）
+      const scope = 'snsapi_userinfo';
+      // 生成随机state防止CSRF攻击
+      const state = Math.random().toString(36).substr(2, 10);
+
+      // 保存state到本地存储，用于后续验证
+      localStorage.setItem('wechat_auth_state', state);
+
+      // 构造授权链接
+      const authUrl = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${state}#wechat_redirect`;
+
+      // 跳转到微信授权页面
+      window.location.href = authUrl;
+    },
+
+    // 处理微信授权回调
+    handleWechatCallback() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const code = urlParams.get('code');
+      const state = urlParams.get('state');
+      const storedState = localStorage.getItem('wechat_auth_state');
+      console.log('??',code,state,storedState)
+      // 验证state防止CSRF攻击
+      if (state && state === storedState) {
+        localStorage.removeItem('wechat_auth_state');
+
+        if (code) {
+          // 调用后端接口换取openid和用户信息
+          // this.$request.get('/wechat/getUserInfo', { params: { code } })
+          //   .then(res => {
+          //     if (res.code === 200) {
+          //       // 保存用户信息（根据实际需求存储）
+          //       localStorage.setItem('openid', res.data.openid);
+          //       localStorage.setItem('userInfo', JSON.stringify(res.data.userInfo));
+
+          //       // 这里可以添加登录成功后的逻辑
+          //       console.log('微信授权登录成功', res.data);
+          //     }
+          //   })
+          //   .catch(err => {
+          //     console.error('微信授权信息获取失败', err);
+          //   });
+        }
+      }
+    },
     // 从URL参数初始化
     async initFromUrlParams() {
       console.log('=== 开始解析URL参数 ===');
@@ -192,10 +264,10 @@ export default {
       const urlParams = new URLSearchParams(window.location.search);
       this.id = urlParams.get('id');
       this.streamType = urlParams.get('type'); // 获取type参数
-      
+
       console.log('直播ID:', this.id);
       console.log('指定格式:', this.streamType);
-      
+
       if (!this.id) {
         console.warn('未找到直播ID参数');
         this.$Message.error('未找到直播ID参数');
@@ -242,10 +314,10 @@ export default {
     // 解析流数据 - 根据type参数选择对应格式
     async parseStreamData(data) {
       console.log('开始解析流数据，指定格式:', this.streamType);
-      
+
       // 根据type参数选择对应的流地址
       let streamUrl = '';
-      
+
       // 如果指定了type参数，使用指定的格式
       if (this.streamType) {
         if (this.streamType.toLowerCase() === 'flv' && data.pullFlvUrl) {
@@ -361,14 +433,14 @@ export default {
     // 处理代理地址
     getProxyUrl(url) {
       if (!url) return "";
-      const targetHost = "http://live.hbjcws.com.cn";
-      if (url.startsWith(targetHost)) {
-        return url.replace(targetHost, "/api-stream");
-      }
-      if (url.startsWith("/api-stream")) {
+      // const targetHost = "http://live.hbjcws.com.cn";
+      // if (url.startsWith(targetHost)) {
+      //   return url.replace(targetHost, "/api");
+      // }
+      // if (url.startsWith("/api")) {
         return url;
-      }
-      return url;
+      // }
+      // return targetHost;
     },
 
     // 初始化M3U8播放器容器（不加载视频）

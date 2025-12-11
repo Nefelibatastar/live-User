@@ -7,7 +7,8 @@ import { Message } from 'iview'
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: 'http://192.168.3.37:8082', // 基础URL，可根据环境配置
+  // baseURL: 'http://192.168.3.37:8082', // 基础URL，可根据环境配置
+  baseURL: 'http://lives.hbjcws.com.cn/api',
   timeout: 5000 // 请求超时时间
 })
 
