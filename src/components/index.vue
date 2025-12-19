@@ -1,144 +1,124 @@
 <template>
-  <div class="player-page">
-    <!-- 播放容器 -->
-    <div class="player-container">
-      <!-- M3U8播放器容器 -->
-      <div v-if="isM3u8" class="video-js-container">
-        <video id="videoPlayer" class="video-js vjs-default-skin" controls playsinline></video>
+  <div class="live-container">
+    <!-- 左侧直播区域 -->
+    <div class="live-left">
+      <!-- 播放容器 -->
+      <div class="player-container">
+        <!-- M3U8播放器容器 -->
+        <div v-if="isM3u8 && liveStatus === '1'" class="video-js-container">
+          <video id="videoPlayer" class="video-js vjs-default-skin" controls playsinline></video>
 
-        <!-- 自定义播放按钮覆盖层（M3U8）- 未初始化时显示 -->
-        <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
-          <div class="play-button" @click="playM3u8">
-            <div class="play-icon"></div>
+          <!-- 自定义播放按钮覆盖层（M3U8）- 未初始化时显示 -->
+          <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
+            <div class="play-button" @click="playM3u8">
+              <div class="play-icon"></div>
+              <div class="play-text">点击播放</div>
+            </div>
+          </div>
+
+          <!-- M3U8错误提示 -->
+          <div v-if="showM3u8Error" class="error-overlay">
+            <div class="error-content">
+              <div class="error-title">播放失败</div>
+              <div class="error-message">{{ m3u8ErrorMessage }}</div>
+              <button class="retry-button" @click="retryM3u8">重试</button>
+            </div>
           </div>
         </div>
 
-        <!-- M3U8错误提示 -->
-        <div v-if="showM3u8Error" class="error-overlay">
-          <div class="error-content">
-            <div class="error-title">播放失败</div>
-            <div class="error-message">{{ m3u8ErrorMessage }}</div>
-            <button class="retry-button" @click="retryM3u8">重试</button>
+        <!-- FLV播放器容器 -->
+        <div v-if="isFlv && liveStatus === '1'" class="flv-container">
+          <video id="videoElement" crossOrigin="anonymous" controls playsinline @click="playFlv"></video>
+
+          <!-- 自定义播放按钮覆盖层（FLV）- 未播放时显示 -->
+          <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
+            <div class="play-button" @click="playFlv">
+              <div class="play-icon"></div>
+              <div class="play-text">点击播放</div>
+            </div>
           </div>
+        </div>
+
+        <!-- 未直播状态：显示封面图 -->
+        <div v-if="liveStatus === '0'" class="cover-container">
+          <img :src="coverImageUrl" alt="直播封面" class="cover-image" v-if="coverImageUrl" />
+          <div class="cover-placeholder" v-else>
+            <div class="placeholder-icon">📺</div>
+            <div class="placeholder-text">直播封面</div>
+          </div>
+
+          <!-- 直播未开始提示 - 现在只显示倒计时 -->
+          <div v-if="liveStatus === '0' && startTime" class="live-status-info countdown-overlay">
+            <!-- 倒计时区域 -->
+            <div class="countdown-display">
+
+              <div class="countdown-timer">
+                <div class="countdown-item">
+                  <span class="countdown-number">{{ countdown.days }}</span>
+                  <span class="countdown-unit">天</span>
+                </div>
+                <div class="countdown-item">
+                  <span class="countdown-number">{{ countdown.hours }}</span>
+                  <span class="countdown-unit">时</span>
+                </div>
+                <div class="countdown-item">
+                  <span class="countdown-number">{{ countdown.minutes }}</span>
+                  <span class="countdown-unit">分</span>
+                </div>
+                <div class="countdown-item">
+                  <span class="countdown-number">{{ countdown.seconds }}</span>
+                  <span class="countdown-unit">秒</span>
+                </div>
+                <div class="countdown-item">
+                  <span class="countdown-text">后开播</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 加载中提示 -->
+        <div v-if="isLoading" class="loading-overlay">
+          <div class="loading-spinner"></div>
+          <div class="loading-text">正在加载视频流...</div>
         </div>
       </div>
 
-      <!-- FLV播放器容器 -->
-      <div v-if="isFlv" class="flv-container">
-        <video id="videoElement" crossOrigin="anonymous" controls playsinline @click="playFlv"></video>
-
-        <!-- 自定义播放按钮覆盖层（FLV）- 未播放时显示 -->
-        <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
-          <div class="play-button" @click="playFlv">
-            <div class="play-icon"></div>
+      <!-- 直播标题和状态 -->
+      <div class="live-info">
+        <div class="live-meta">
+          <div class="live-time">{{ liveShowName }}</div>
+          <div class="countdown-header">
+            <Icon type="md-clock" size="20" color="#ccc" />
+            <span class="countdown-label">{{ startTime }}</span>
           </div>
+          <!-- 移除这里的倒计时 -->
         </div>
-      </div>
 
-      <!-- 等待播放提示（初始状态） -->
-      <div v-if="!isM3u8 && !isFlv && streamUrl" class="empty-tip">
-        <div class="tip-content">
-          <div class="tip-title">准备播放</div>
-          <div class="tip-subtitle">正在准备播放器...</div>
-          <div class="tip-info">
-            <p><strong>流地址：</strong>{{ streamUrl }}</p>
-            <p><strong>检测格式：</strong>{{ detectedFormat }}</p>
-            <p><strong>状态：</strong>等待用户点击播放</p>
-          </div>
+        <!-- 直播介绍 -->
+        <!-- <div class="intro-section"> -->
+        <h3 class="section-title" style="font-size: 14px;">直播介绍</h3>
+        <div class="intro-content">
+          <p>本次会议将围绕医院感染质量管理与控制展开深入讨论，分享最新研究成果和实践经验。会议采用线上线下相结合的方式，方便更多医疗工作者参与。欢迎各位医疗同仁积极参与交流！</p>
         </div>
-      </div>
-
-      <!-- 没有流地址提示 -->
-      <!-- <div v-if="!streamUrl" class="empty-tip">
-        <div class="tip-content">
-          <div class="tip-title">未找到流地址</div>
-          <div class="tip-subtitle">请通过URL参数传入有效的直播地址</div>
-          <div class="tip-info">
-            <p>支持的参数：</p>
-            <p><code>?url=直播地址</code></p>
-            <p><code>?m3u8=M3U8地址</code></p>
-            <p><code>?flv=FLV地址</code></p>
-          </div>
-        </div>
-      </div> -->
-
-      <!-- 加载中提示 -->
-      <div v-if="isLoading" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">正在加载视频流...</div>
+        <!-- </div> -->
       </div>
     </div>
-  </div>
-</template>
 
-<template>
-  <div class="player-page">
-    <!-- 播放容器 -->
-    <div class="player-container">
-      <!-- M3U8播放器容器 -->
-      <div v-if="isM3u8" class="video-js-container">
-        <video id="videoPlayer" class="video-js vjs-default-skin" controls playsinline></video>
-
-        <!-- 自定义播放按钮覆盖层（M3U8）- 未初始化时显示 -->
-        <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
-          <div class="play-button" @click="playM3u8">
-            <div class="play-icon"></div>
-          </div>
+    <!-- 右侧信息区域 -->
+    <div class="live-right">
+      <!-- 互动区域 -->
+      <div class="interaction-section">
+        <h3 class="section-title">互动</h3>
+        <div class="comment-empty">
+          <div class="empty-icon">💬</div>
+          <div class="empty-text">还没有评论</div>
         </div>
-
-        <!-- M3U8错误提示 -->
-        <div v-if="showM3u8Error" class="error-overlay">
-          <div class="error-content">
-            <div class="error-title">播放失败</div>
-            <div class="error-message">{{ m3u8ErrorMessage }}</div>
-            <button class="retry-button" @click="retryM3u8">重试</button>
-          </div>
+        <div class="comment-input-area">
+          <input type="text" placeholder="说点什么~" class="comment-input" v-model="commentText"
+            @keyup.enter="submitComment" />
+          <button class="comment-submit" @click="submitComment">发送</button>
         </div>
-      </div>
-
-      <!-- FLV播放器容器 -->
-      <div v-if="isFlv" class="flv-container">
-        <video id="videoElement" crossOrigin="anonymous" controls playsinline @click="playFlv"></video>
-
-        <!-- 自定义播放按钮覆盖层（FLV）- 未播放时显示 -->
-        <div v-if="!isPlaying && !isLoading" class="custom-play-overlay">
-          <div class="play-button" @click="playFlv">
-            <div class="play-icon"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 等待播放提示（初始状态） -->
-      <div v-if="!isM3u8 && !isFlv && streamUrl" class="empty-tip">
-        <div class="tip-content">
-          <div class="tip-title">准备播放</div>
-          <div class="tip-subtitle">正在准备播放器...</div>
-          <div class="tip-info">
-            <p><strong>流地址：</strong>{{ streamUrl }}</p>
-            <p><strong>指定格式：</strong>{{ streamType || '未指定' }}</p>
-            <p><strong>状态：</strong>等待用户点击播放</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 没有流地址提示 -->
-      <!-- <div v-if="!streamUrl" class="empty-tip">
-        <div class="tip-content">
-          <div class="tip-title">未找到流地址</div>
-          <div class="tip-subtitle">请通过URL参数传入有效的直播地址</div>
-          <div class="tip-info">
-            <p>支持的参数：</p>
-            <p><code>?id=直播ID</code></p>
-            <p><code>?id=直播ID&type=flv</code> (指定FLV格式)</p>
-            <p><code>?id=直播ID&type=m3u8</code> (指定M3U8格式)</p>
-          </div>
-        </div>
-      </div> -->
-
-      <!-- 加载中提示 -->
-      <div v-if="isLoading" class="loading-overlay">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">正在加载视频流...</div>
       </div>
     </div>
   </div>
@@ -148,11 +128,19 @@
 import videojs from "video.js";
 import "video.js/dist/video-js.css";
 import flvjs from 'flv.js'
+import { config } from '../config'
 
 export default {
   name: "LivePlayerPage",
   data() {
     return {
+      // 直播数据
+      liveShowName: '',
+      startTime: '',
+      liveStatus: '0', // '0': 未开始, '1': 直播中
+      coverImageUrl: '',
+
+      // 播放器相关
       streamUrl: "",
       proxyUrl: "",
       id: '',
@@ -171,58 +159,71 @@ export default {
       reconnectCount: 0,
       maxReconnect: 5,
       timerId: null,
+      streamType: null,
 
-      // 新增字段
-      streamData: null,  // 接口返回的完整数据
-      streamType: null,  // 从URL参数获取的流类型：'flv' 或 'm3u8'
+      // 倒计时相关
+      countdown: {
+        days: '00',
+        hours: '00',
+        minutes: '00',
+        seconds: '00'
+      },
+      countdownTimer: null,
+      hasRefreshedAfterCountdown: false, // 新增：标记是否已经刷新过
+      isRefreshing: false, // 新增：防止重复刷新
+
+      // 互动
+      commentText: '',
+
+      // 当前年份
+      currentYear: new Date().getFullYear()
     };
   },
 
   mounted() {
     console.log('页面加载，初始化参数');
     this.initFromUrlParams();
+    // this.startCountdown();
 
-    // 微信浏览器授权逻辑
+    // 微信浏览器授权逻辑（保留原有逻辑）
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     console.log('code', urlParams, code)
 
     if (this.isWechatBrowser()) {
       if (code) {
-        // 有code参数，说明是授权回调，处理用户信息
         this.handleWechatCallback();
       } else {
-        // 没有code参数，且是微信浏览器，触发授权
         this.wechatAuth();
       }
-    } else {
-      // console.log('非微信浏览器，不进行授权');
     }
   },
+
+  beforeDestroy() {
+    console.log('组件销毁，清理资源');
+    this.destroyAllPlayers();
+    if (this.countdownTimer) {
+      clearInterval(this.countdownTimer);
+      this.countdownTimer = null; // 清空定时器变量，防止内存泄漏
+    }
+  },
+
   methods: {
     // 检测是否是微信浏览器
     isWechatBrowser() {
       const userAgent = navigator.userAgent.toLowerCase();
       return userAgent.includes('micromessenger');
     },
+
     // 微信授权登录主方法
     wechatAuth() {
-      // 公众号appid（请替换为你的实际appid）
       const appid = 'wx9e05ef34b2bc54b6';
-      // 授权成功后的回调地址（需在公众号后台配置）
       const redirectUri = encodeURIComponent(window.location.href);
-      // 授权scope（snsapi_userinfo用于获取用户信息）
       const scope = 'snsapi_userinfo';
-      // 生成随机state防止CSRF攻击
       const state = Math.random().toString(36).substr(2, 10);
 
-      // 保存state到本地存储，用于后续验证
       localStorage.setItem('wechat_auth_state', state);
-
-      // 构造授权链接
       const authUrl = `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${appid}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${state}#wechat_redirect`;
-
-      // 跳转到微信授权页面
       window.location.href = authUrl;
     },
 
@@ -233,49 +234,31 @@ export default {
       const state = urlParams.get('state');
       const storedState = localStorage.getItem('wechat_auth_state');
       console.log('??', code, state, storedState)
-      // 验证state防止CSRF攻击
+
       if (state && state === storedState) {
         localStorage.removeItem('wechat_auth_state');
-
         if (code) {
-          // 调用后端接口换取openid和用户信息
-          // this.$request.get('/wechat/getUserInfo', { params: { code } })
-          //   .then(res => {
-          //     if (res.code === 200) {
-          //       // 保存用户信息（根据实际需求存储）
-          //       localStorage.setItem('openid', res.data.openid);
-          //       localStorage.setItem('userInfo', JSON.stringify(res.data.userInfo));
-
-          //       // 这里可以添加登录成功后的逻辑
-          //       console.log('微信授权登录成功', res.data);
-          //     }
-          //   })
-          //   .catch(err => {
-          //     console.error('微信授权信息获取失败', err);
-          //   });
+          // 调用后端接口逻辑
         }
       }
     },
+
     // 从URL参数初始化
     async initFromUrlParams() {
       console.log('=== 开始解析URL参数 ===');
 
-      // 获取URL参数
       const urlParams = new URLSearchParams(window.location.search);
       this.id = urlParams.get('id');
-      this.streamType = urlParams.get('type'); // 获取type参数
-
+      this.streamType = urlParams.get('type');
 
       if (!this.id) {
         this.$Message.error('未找到直播ID参数');
         return;
       }
 
-      // 显示加载状态
       this.isLoading = true;
 
       try {
-        // 调用接口获取流地址信息
         await this.getStreamDataById(this.id);
       } catch (error) {
         console.error('获取流地址信息失败:', error);
@@ -289,33 +272,43 @@ export default {
       console.log('调用接口获取流地址信息，ID:', id);
 
       try {
-        // 这里使用您的接口调用方式
         const res = await this.$api.getById({ id: id });
 
         if (res.code === 200) {
-          this.streamData = res.data;
-          console.log('接口返回数据:', res.data);
+          const data = res.data;
+          this.liveShowName = data.liveShowName;
+          this.startTime = data.startTime;
+          this.liveStatus = data.liveStatus;
 
-          // 根据返回的数据结构解析流地址
-          await this.parseStreamData(this.streamData);
-        } else {
-          // throw new Error(res.message || '接口返回错误');
+          // 重置刷新标志
+          this.hasRefreshedAfterCountdown = false;
+
+          if (data.liveCover) {
+            this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`; 
+          }
+
+          // 启动倒计时
+          this.startCountdown();
+
+          // 只有当直播状态为1时，才初始化播放器
+          if (this.liveStatus === '1') {
+            await this.parseStreamData(data);
+          } else {
+            this.isLoading = false;
+          }
         }
       } catch (error) {
-        // this.$Message.error('获取直播信息失败: ' + error.message);
         this.isLoading = false;
         throw error;
       }
     },
 
-    // 解析流数据 - 根据type参数选择对应格式
+    // 解析流数据
     async parseStreamData(data) {
       console.log('开始解析流数据，指定格式:', this.streamType);
 
-      // 根据type参数选择对应的流地址
       let streamUrl = '';
 
-      // 如果指定了type参数，使用指定的格式
       if (this.streamType) {
         if (this.streamType.toLowerCase() === 'flv' && data.pullFlvUrl) {
           streamUrl = data.pullFlvUrl;
@@ -323,30 +316,14 @@ export default {
         } else if (this.streamType.toLowerCase() === 'm3u8' && data.pullM3u8Url) {
           streamUrl = data.pullM3u8Url;
           this.detectedFormat = 'm3u8';
-        } else if (this.streamType.toLowerCase() === 'flv' && !data.pullFlvUrl) {
-          this.$Message.error('该直播没有FLV格式的播流地址');
-          this.isLoading = false;
-          return;
-        } else if (this.streamType.toLowerCase() === 'm3u8' && !data.pullM3u8Url) {
-          this.$Message.error('该直播没有M3U8格式的播流地址');
-          this.isLoading = false;
-          return;
         }
       } else {
-        // 如果没有指定type参数，保持原来的逻辑：优先使用FLV，其次M3U8
         if (data.pullFlvUrl) {
           streamUrl = data.pullFlvUrl;
           this.detectedFormat = 'flv';
-          console.log('未指定格式，默认使用FLV地址:', streamUrl);
         } else if (data.pullM3u8Url) {
           streamUrl = data.pullM3u8Url;
           this.detectedFormat = 'm3u8';
-          console.log('未指定格式，使用M3U8地址:', streamUrl);
-        } else if (data.pushRtmpUrl) {
-          streamUrl = '';
-        } else {
-          // 尝试从其他字段解析
-          streamUrl = this.findStreamUrlInData(data);
         }
       }
 
@@ -356,84 +333,30 @@ export default {
         this.$Message.error('未找到有效的流地址');
         return;
       }
+
       this.streamUrl = streamUrl;
-
-      // 处理代理地址
       this.proxyUrl = this.getProxyUrl(streamUrl);
-      console.log('代理地址:', this.proxyUrl);
 
-      // 根据检测到的格式设置播放器类型
       if (this.detectedFormat === 'm3u8') {
         this.isM3u8 = true;
         this.isFlv = false;
-        // 提前初始化video.js容器，但不要加载视频
         this.$nextTick(() => {
           this.initM3u8PlayerContainer();
         });
       } else if (this.detectedFormat === 'flv') {
         this.isFlv = true;
         this.isM3u8 = false;
-        // FLV播放器等待用户点击
-      } else if (this.detectedFormat === 'rtmp') {
-        console.warn('RTMP格式可能需要特殊处理');
-        // 您可以在这里添加RTMP播放器初始化逻辑
       }
 
       this.isLoading = false;
     },
 
-    // 从数据中查找流地址
-    findStreamUrlInData(data) {
-      console.log('尝试从数据中查找流地址');
-
-      // 遍历所有字段，查找包含常见流地址格式的字段
-      // const streamKeywords = ['url', 'stream', 'live', 'video', 'flv', 'm3u8'];
-      const streamKeywords = ['flv', 'm3u8'];
-
-      for (const key in data) {
-        const value = data[key];
-
-        // 只处理字符串类型
-        if (typeof value === 'string' && value.trim()) {
-          const lowerValue = value.toLowerCase();
-
-          // 检查是否包含流地址特征
-          for (const keyword of streamKeywords) {
-            if (lowerValue.includes(keyword) &&
-              (lowerValue.includes('http://') || lowerValue.includes('https://'))) {
-              console.log(`在字段 ${key} 中找到可能的流地址:`, value);
-
-              // 进一步检测格式
-              if (lowerValue.includes('.flv') || lowerValue.includes('flv')) {
-                this.detectedFormat = 'flv';
-              } else if (lowerValue.includes('.m3u8') || lowerValue.includes('m3u8')) {
-                this.detectedFormat = 'm3u8';
-              }
-
-              return value;
-            }
-          }
-        }
-      }
-
-      return null;
-    },
-
     // 处理代理地址
-    // getProxyUrl(url) {
-    //   if (!url) return "";
-    //   const targetHost = "http://live.hbjcws.com.cn";
-    //   // 将原始跨域地址转换为代理路径
-    //   if (url.startsWith(targetHost)) {
-    //     // 例如：http://live.hbjcws.com.cn/xxx → /api/xxx
-    //     return url.replace(targetHost, "/api");
-    //   }
-    //   return url;
-    // },
     getProxyUrl(url) {
-      return url || ''; // 直接返回原始地址，不做任何代理转换
+      return url || '';
     },
-    // 初始化M3U8播放器容器（不加载视频）
+
+    // 初始化M3U8播放器容器
     initM3u8PlayerContainer() {
       console.log('初始化M3U8播放器容器');
 
@@ -446,19 +369,17 @@ export default {
         const options = {
           aspectRatio: '16:9',
           notSupportedMessage: '此M3U8直播暂无法播放',
-          autoplay: false, // 不自动播放
+          autoplay: false,
           muted: false,
-          preload: "none", // 不预加载
+          preload: "none",
           controls: true,
           fluid: true,
           liveui: true,
         };
 
         try {
-          // 只初始化video.js播放器，不设置source
           this.vjsPlayer = videojs("videoPlayer", options);
 
-          // 监听播放事件
           this.vjsPlayer.on('play', () => {
             console.log('M3U8播放开始');
             this.isPlaying = true;
@@ -466,13 +387,11 @@ export default {
             this.showM3u8Error = false;
           });
 
-          // 监听暂停事件
           this.vjsPlayer.on('pause', () => {
             console.log('M3U8播放暂停');
             this.isPlaying = false;
           });
 
-          // 监听错误事件
           this.vjsPlayer.on('error', (error) => {
             console.error('M3U8播放错误:', error);
             this.isPlaying = false;
@@ -505,10 +424,8 @@ export default {
             this.showM3u8Error = true;
           });
 
-          // 播放器准备好
           this.vjsPlayer.ready(() => {
             console.log('M3U8播放器容器准备就绪，等待用户点击播放');
-            // 不自动加载视频，等待用户点击
           });
 
         } catch (error) {
@@ -517,7 +434,7 @@ export default {
       });
     },
 
-    // 播放M3U8（用户点击时调用）
+    // 播放M3U8
     playM3u8() {
       console.log('用户点击播放M3U8');
 
@@ -528,19 +445,15 @@ export default {
 
       this.isLoading = true;
 
-      // 设置视频源并加载
       this.vjsPlayer.src({
-        src: this.streamUrl, // 直接使用原始地址
+        src: this.streamUrl,
         type: 'application/x-mpegURL'
       });
 
-      // 加载并播放
       this.vjsPlayer.load();
       this.vjsPlayer.play().catch(err => {
         console.error('M3U8播放失败:', err);
         this.isLoading = false;
-
-        // 显示错误信息
         this.m3u8ErrorMessage = '播放失败，请重试';
         this.showM3u8Error = true;
       });
@@ -559,7 +472,6 @@ export default {
       this.showM3u8Error = false;
       this.isLoading = true;
 
-      // 重新加载视频
       if (this.vjsPlayer) {
         this.vjsPlayer.load();
         this.vjsPlayer.play().catch(err => {
@@ -571,16 +483,14 @@ export default {
       }
     },
 
-    // 播放FLV（用户点击时调用）
+    // 播放FLV
     playFlv() {
       console.log('用户点击播放FLV');
 
-      // 如果已经初始化并播放中，不重复操作
       if (this.isPlaying && this.flvPlayer) {
         return;
       }
 
-      // 如果已经初始化但暂停了，恢复播放
       if (this.flvPlayer) {
         const videoElement = document.getElementById('videoElement');
         if (videoElement && videoElement.paused) {
@@ -591,7 +501,6 @@ export default {
         return;
       }
 
-      // 初始化FLV播放器
       this.initFlvPlayer();
     },
 
@@ -599,7 +508,6 @@ export default {
     initFlvPlayer() {
       console.log('初始化FLV播放器');
 
-      // 检查浏览器支持
       if (!flvjs.isSupported()) {
         alert('当前浏览器不支持FLV直播');
         this.isFlv = false;
@@ -617,50 +525,41 @@ export default {
         }
 
         try {
-          // 创建FLV播放器
           this.flvPlayer = flvjs.createPlayer({
             type: 'flv',
             isLive: true,
             hasAudio: true,
-            url: this.streamUrl, // 直接使用原始地址
+            url: this.streamUrl,
             enableWorker: false,
           }, {
-            cors: true, // 允许跨域请求
+            cors: true,
             enableStashBuffer: false,
           });
 
-          // 关联媒体元素
           this.flvPlayer.attachMediaElement(videoElement);
-
-          // 加载视频流
           this.flvPlayer.load();
 
-          // 监听加载完成事件
           this.flvPlayer.on(flvjs.Events.LOADING_COMPLETE, () => {
             console.log('FLV加载完成');
             this.isLoading = false;
           });
 
-          // 监听播放事件
           videoElement.addEventListener('play', () => {
             console.log('FLV播放开始');
             this.isPlaying = true;
             this.isLoading = false;
           });
 
-          // 监听暂停事件
           videoElement.addEventListener('pause', () => {
             console.log('FLV播放暂停');
             this.isPlaying = false;
           });
 
-          // 监听错误事件
           this.flvPlayer.on(flvjs.Events.ERROR, (err, errdet) => {
             console.error('FLV直播错误：', err, errdet);
             this.isPlaying = false;
             this.isLoading = false;
 
-            // 错误重连
             if (this.reconnectCount < this.maxReconnect) {
               this.reconnectCount++;
               console.log(`FLV重连尝试: ${this.reconnectCount}`);
@@ -673,7 +572,6 @@ export default {
             }
           });
 
-          // 自动播放
           videoElement.play().catch(err => {
             console.error('自动播放失败:', err);
             this.isLoading = false;
@@ -691,16 +589,12 @@ export default {
     tryReconnectFlv() {
       console.log('FLV重连');
 
-      // 销毁当前播放器
       if (this.flvPlayer) {
         this.flvPlayer.destroy();
         this.flvPlayer = null;
       }
 
-      // 重置重连计数
       this.reconnectCount = 0;
-
-      // 重新初始化
       this.initFlvPlayer();
     },
 
@@ -737,41 +631,263 @@ export default {
       this.reconnectCount = 0;
       this.m3u8RetryCount = 0;
     },
-  },
 
-  beforeDestroy() {
-    console.log('组件销毁，清理资源');
-    this.destroyAllPlayers();
-  },
+    // 倒计时相关方法
+    startCountdown() {
+      // 若startTime仍为空，直接返回（兜底处理）
+      if (!this.startTime) {
+        console.warn('开始时间为空，无法启动倒计时');
+        return;
+      }
+
+      // 清除原有定时器，防止重复创建
+      if (this.countdownTimer) {
+        clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
+      }
+
+      const updateCountdown = () => {
+        try {
+          const [datePart, timePart] = this.startTime.split(' ');
+          const [year, month, day] = datePart.split('-').map(Number);
+          let sHours = 0, sMinutes = 0, sSeconds = 0;
+          if (timePart) {
+            const [h, m, s] = timePart.split(':').map(Number);
+            sHours = h;
+            sMinutes = m;
+            sSeconds = s;
+          }
+
+          const start = new Date(year, month - 1, day, sHours, sMinutes, sSeconds);
+          const now = new Date();
+
+          if (isNaN(start.getTime())) {
+            console.error('开始时间解析失败:', this.startTime);
+            this.clearCountdown();
+            return;
+          }
+
+          // 如果已经过了开始时间
+          if (now >= start) {
+            console.log('开始时间已到达，停止倒计时');
+            this.clearCountdown();
+
+            // 只在第一次到达时刷新状态
+            if (!this.hasRefreshedAfterCountdown) {
+              this.hasRefreshedAfterCountdown = true;
+              // 延迟500ms后刷新状态，避免频繁调用
+              setTimeout(() => {
+                this.refreshLiveStatus();
+              }, 500);
+            }
+            return;
+          }
+
+          // 计算并更新倒计时
+          const diff = start.getTime() - now.getTime();
+          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+          const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+          this.countdown = {
+            days: this.padZero(days),
+            hours: this.padZero(hours),
+            minutes: this.padZero(minutes),
+            seconds: this.padZero(seconds)
+          };
+
+        } catch (error) {
+          console.error('倒计时计算异常:', error);
+          this.clearCountdown();
+        }
+      };
+
+      // 初始化刷新标志
+      this.hasRefreshedAfterCountdown = false;
+
+      // 立即执行一次，避免延迟
+      updateCountdown();
+      // 每秒更新一次
+      this.countdownTimer = setInterval(updateCountdown, 1000);
+    },
+    // 新增：清除倒计时的方法
+    clearCountdown() {
+      if (this.countdownTimer) {
+        clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
+      }
+      this.countdown = { days: '00', hours: '00', minutes: '00', seconds: '00' };
+    },
+    padZero(num) {
+      return num.toString().padStart(2, '0');
+    },
+
+    // 【新增方法】刷新直播状态
+    async refreshLiveStatus() {
+      if (!this.id) return;
+
+      // 防止短时间内多次刷新
+      if (this.isRefreshing) {
+        console.log('正在刷新中，跳过此次请求');
+        return;
+      }
+
+      try {
+        console.log('刷新直播状态...');
+        this.isRefreshing = true;
+
+        // 调用接口获取最新状态
+        const res = await this.$api.getById({ id: this.id });
+
+        if (res.code === 200) {
+          const data = res.data;
+          const oldStatus = this.liveStatus;
+          const newStatus = data.liveStatus;
+
+          // 更新数据
+          this.liveShowName = data.liveShowName;
+          this.startTime = data.startTime;
+          this.liveStatus = newStatus;
+
+          if (data.liveCover) {
+            this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`;
+          }
+
+          // 只有在状态发生变化时才重新启动倒计时
+          if (oldStatus !== newStatus) {
+            console.log(`直播状态变化: ${oldStatus} -> ${newStatus}`);
+
+            // 如果变成直播中，初始化播放器
+            if (newStatus === '1') {
+              await this.parseStreamData(data);
+            }
+
+            // 重新启动倒计时（如果是未开始状态）
+            if (newStatus === '0') {
+              this.startCountdown();
+            } else {
+              this.clearCountdown();
+            }
+          } else {
+            console.log('直播状态未变化，保持当前状态');
+
+            // 如果状态仍然是未开始，且没有倒计时，重新启动倒计时
+            if (newStatus === '0' && !this.countdownTimer) {
+              this.startCountdown();
+            }
+          }
+        }
+      } catch (error) {
+        console.error('刷新直播状态失败:', error);
+
+        // 如果刷新失败，但直播状态是未开始，仍然尝试重新启动倒计时
+        if (this.liveStatus === '0') {
+          // 延迟重试
+          setTimeout(() => {
+            if (!this.countdownTimer) {
+              this.startCountdown();
+            }
+          }, 3000);
+        }
+      } finally {
+        this.isRefreshing = false;
+      }
+    },
+    // 格式化时间
+    formatDateTime(dateTime) {
+      if (!dateTime) return '';
+      const date = new Date(dateTime);
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return `${month}月${day}日 ${hours}:${minutes}`;
+    },
+
+    formatStartTime(dateTime) {
+      if (!dateTime) return '';
+      const date = new Date(dateTime);
+      return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    },
+
+    // 新增时间格式化方法
+    formatMonthDay(dateTime) {
+      if (!dateTime) return '';
+      const date = new Date(dateTime);
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return `${month}月${day}日`;
+    },
+
+    formatHourMinute(dateTime) {
+      if (!dateTime) return '';
+      const date = new Date(dateTime);
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    },
+
+    // 提交评论
+    submitComment() {
+      if (!this.commentText.trim()) {
+        this.$Message.warning('请输入评论内容');
+        return;
+      }
+
+      console.log('提交评论:', this.commentText);
+      // 这里可以调用API提交评论
+      this.$Message.success('评论已发送');
+      this.commentText = '';
+    }
+  }
 };
 </script>
 
 <style scoped>
-/* 页面容器 */
-.player-page {
-  padding: 20px 10px;
-  max-width: 1200px;
-  margin: 0 auto;
-  height: 100vh;
+body {
+  box-sizing: border-box;
+
+}
+
+/* 整体布局 */
+.live-container {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
+  max-width: 1200px;
+  margin: 20px auto;
+  gap: 20px;
+  padding: 0 20px;
+}
+
+.live-left {
+  flex: 3;
+  min-width: 0;
+}
+
+.live-right {
+  display: flex;
+  min-width: 300px;
 }
 
 /* 播放器容器 */
 .player-container {
   position: relative;
   width: 100%;
-  max-width: 1200px;
   padding-top: 56.25%;
+  /* 16:9 比例 */
   background: #000;
-  border-radius: 8px;
+  border-radius: 3px;
   overflow: hidden;
-  margin: 0 auto;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-/* 播放器子容器 */
+/* 视频播放器样式 */
 .video-js-container,
 .flv-container {
   position: absolute;
@@ -781,13 +897,258 @@ export default {
   height: 100%;
 }
 
-/* 视频元素 */
 #videoPlayer,
 #videoElement {
   width: 100% !important;
   height: 100% !important;
   object-fit: cover;
   background: #000;
+}
+
+/* 封面图容器 */
+.cover-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.cover-image {
+  width: 100%;
+  height: 100%;
+  /* object-fit: contain; */
+}
+
+.cover-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+}
+
+.placeholder-icon {
+  font-size: 48px;
+  margin-bottom: 10px;
+}
+
+.placeholder-text {
+  font-size: 16px;
+}
+
+/* 倒计时覆盖层 */
+.live-status-info.countdown-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  color: white;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 倒计时显示区域 - 透明样式 */
+.countdown-display {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  backdrop-filter: blur(1px);
+}
+
+.countdown-header {
+  margin-bottom: 10px;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+}
+
+.date-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.countdown-label {
+  font-weight: 500;
+  opacity: 0.9;
+  margin-left: 5px;
+}
+
+/* 倒计时计时器 */
+.countdown-timer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.countdown-item {
+  display: flex;
+  align-items: center;
+}
+
+.countdown-number {
+  display: inline-block;
+  min-width: 32px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  text-align: center;
+  border-radius: 4px;
+  margin-right: 4px;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.countdown-unit {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  margin-right: 6px;
+  font-weight: 500;
+}
+
+.countdown-text {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 14px;
+  margin-left: 2px;
+}
+
+/* 直播信息 */
+.live-info {
+  text-align: left;
+  margin-top: 20px;
+  padding: 10px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.live-meta {
+  gap: 8px;
+  color: #666;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.live-time {
+  margin: 8px 0;
+  font-weight: 800;
+  font-size: 16px;
+  color: #434343;
+}
+
+.live-mode {
+  color: #52c41a;
+  font-size: 14px;
+  display: inline-block;
+  margin-right: 10px;
+}
+
+/* 右侧区域 */
+.live-right {
+  display: flex;
+  gap: 20px;
+}
+
+.interaction-section,
+.intro-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.interaction-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.section-title {
+  font-size: 18px;
+  color: #333;
+  margin: 0 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* 互动区域 */
+.comment-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 0;
+  color: #999;
+  flex: 1;
+}
+
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+}
+
+.empty-text {
+  font-size: 14px;
+}
+
+.comment-input-area {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.comment-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.comment-input:focus {
+  outline: none;
+  border-color: #1890ff;
+}
+
+.comment-submit {
+  padding: 8px 20px;
+  background: #1890ff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.comment-submit:hover {
+  background: #40a9ff;
+}
+
+/* 直播介绍 */
+.intro-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #666;
+}
+
+.intro-content p {
+  margin: 0 0 10px 0;
+}
+
+.intro-content p:last-child {
+  margin-bottom: 0;
 }
 
 /* 自定义播放按钮覆盖层 */
@@ -843,62 +1204,6 @@ export default {
   font-size: 18px;
   font-weight: 500;
   text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-/* 空提示文本 */
-.empty-tip {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 16px;
-  background: rgba(0, 0, 0, 0.9);
-  z-index: 5;
-}
-
-.tip-content {
-  text-align: center;
-  padding: 30px;
-  max-width: 80%;
-}
-
-.tip-title {
-  font-size: 28px;
-  font-weight: bold;
-  margin-bottom: 15px;
-  color: #fff;
-}
-
-.tip-subtitle {
-  font-size: 18px;
-  margin-bottom: 30px;
-  color: #ccc;
-}
-
-.tip-info {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 20px;
-  border-radius: 8px;
-  text-align: left;
-  font-size: 14px;
-  color: #aaa;
-  max-height: 200px;
-  overflow-y: auto;
-  margin-top: 20px;
-}
-
-.tip-info p {
-  margin: 10px 0;
-  word-break: break-all;
-}
-
-.tip-info strong {
-  color: #fff;
 }
 
 /* M3U8错误覆盖层 */
@@ -1011,20 +1316,42 @@ export default {
 
 /* 响应式调整 */
 @media (max-width: 768px) {
-  .player-page {
+  .live-container {
+    flex-direction: column;
     padding: 10px;
   }
 
-  .player-container {
-    border-radius: 4px;
+  .live-left,
+  .live-right {
+    width: 100%;
   }
 
-  .tip-title {
-    font-size: 22px;
+  .live-meta {
+    flex-direction: column;
+    gap: 10px;
   }
 
-  .tip-subtitle {
-    font-size: 16px;
+  .countdown-timer {
+    gap: 6px;
+  }
+
+  .countdown-number {
+    font-size: 14px;
+    min-width: 26px;
+    padding: 3px 6px;
+  }
+
+  .countdown-unit {
+    font-size: 12px;
+    margin-right: 4px;
+  }
+
+  .countdown-text {
+    font-size: 12px;
+  }
+
+  .countdown-header {
+    font-size: 13px;
   }
 
   .play-icon {
@@ -1038,6 +1365,18 @@ export default {
 
   .play-text {
     font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .countdown-number {
+    font-size: 12px;
+    min-width: 22px;
+    padding: 2px 4px;
+  }
+
+  .countdown-timer {
+    gap: 4px;
   }
 }
 </style>
