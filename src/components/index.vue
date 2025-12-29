@@ -96,12 +96,10 @@
         </div>
 
         <!-- 直播介绍 -->
-        <!-- <div class="intro-section"> -->
         <h3 class="section-title" style="font-size: 14px;">直播介绍</h3>
         <div class="intro-content">
           <p>本次会议将围绕医院感染质量管理与控制展开深入讨论，分享最新研究成果和实践经验。会议采用线上线下相结合的方式，方便更多医疗工作者参与。欢迎各位医疗同仁积极参与交流！</p>
         </div>
-        <!-- </div> -->
       </div>
     </div>
 
@@ -110,9 +108,11 @@
       <!-- 互动区域 -->
       <div class="interaction-section">
         <h3 class="section-title">互动</h3>
-        <div class="comment-empty">
-          <div class="empty-icon">💬</div>
-          <div class="empty-text">还没有评论</div>
+        <div class="comment-area">
+          <div class="comment-empty">
+            <div class="empty-icon">💬</div>
+            <div class="empty-text">还没有评论</div>
+          </div>
         </div>
         <div class="comment-input-area">
           <input type="text" placeholder="说点什么~" class="comment-input" v-model="commentText"
@@ -121,6 +121,73 @@
         </div>
       </div>
     </div>
+
+    <!-- 报名表单悬浮按钮 -->
+    <div class="registration-fab" @click="showRegistrationModal = true">
+      <div class="fab-icon">📝</div>
+      <div class="fab-text">报名表</div>
+    </div>
+
+    <!-- 报名表单弹框 -->
+    <Modal v-model="showRegistrationModal" :title="liveShowName" width="500" :mask-closable="false"
+      @on-ok="submitRegistration" @on-cancel="cancelRegistration" class-name="registration-modal">
+      <Form ref="registrationForm" :model="registrationData" :rules="registrationRules" label-position="top">
+        <div style="font-size: 15px;font-weight: 600;margin-bottom: 10px;">请如实填写以下信息</div>
+        <!-- 省市区三级联动 -->
+        <FormItem label="地区" prop="region" required>
+          <Row :gutter="8">
+            <Col span="8">
+            <Select v-model="registrationData.province" placeholder="请选择省" @on-change="handleProvinceChange" clearable>
+              <Option v-for="province in provinces" :key="province.value" :value="province.value">{{ province.text }}
+              </Option>
+            </Select>
+            </Col>
+            <Col span="8">
+            <Select v-model="registrationData.city" placeholder="请选择市" :disabled="!registrationData.province"
+              @on-change="handleCityChange" clearable>
+              <Option v-for="city in cities" :key="city.value" :value="city.value">{{ city.text }}</Option>
+            </Select>
+            </Col>
+            <Col span="8">
+            <Select v-model="registrationData.district" placeholder="请选择区/县" :disabled="!registrationData.city"
+              clearable>
+              <Option v-for="district in districts" :key="district.value" :value="district.value">{{ district.text }}
+              </Option>
+            </Select>
+            </Col>
+          </Row>
+        </FormItem>
+
+        <!-- 其他表单项保持不变 -->
+        <FormItem label="姓名" prop="name" required>
+          <Input v-model="registrationData.name" placeholder="请输入姓名" clearable />
+        </FormItem>
+
+        <FormItem label="单位" prop="organization" required>
+          <Input v-model="registrationData.organization" placeholder="请输入单位全称" clearable />
+        </FormItem>
+
+        <FormItem label="部门" prop="department" required>
+          <Input v-model="registrationData.department" placeholder="请输入部门名称" clearable />
+        </FormItem>
+
+        <FormItem label="职称" prop="title" required>
+          <Input v-model="registrationData.title" placeholder="请输入您的职称" clearable />
+        </FormItem>
+
+        <FormItem label="职务" prop="position" required>
+          <Input v-model="registrationData.position" placeholder="请输入您的职务" clearable />
+        </FormItem>
+
+        <FormItem label="联系电话" prop="phone" required>
+          <Input v-model="registrationData.phone" placeholder="请输入您的电话号码" clearable />
+        </FormItem>
+      </Form>
+      <div slot="footer">
+        <Button @click="cancelRegistration">取消</Button>
+        <Button type="primary" @click="submitRegistration" :loading="registrationLoading">提交</Button>
+      </div>
+    </Modal>
   </div>
 </template>
 
@@ -129,10 +196,30 @@ import videojs from "video.js";
 import "video.js/dist/video-js.css";
 import flvjs from 'flv.js'
 import { config } from '../config'
+// 导入省市区数据 - 这里使用简化版，实际项目中可以使用完整数据
+import areaData from '../utils/areaData'
 
 export default {
   name: "LivePlayerPage",
   data() {
+    // 验证所有字段必填
+    const validateRequired = (rule, value, callback) => {
+      if (!value || value.trim() === '') {
+        callback(new Error('此项为必填项'));
+      } else {
+        callback();
+      }
+    };
+
+    // 验证地区选择完整
+    const validateRegion = (rule, value, callback) => {
+      if (!this.registrationData.province || !this.registrationData.city || !this.registrationData.district) {
+        callback(new Error('请选择完整的省市区'));
+      } else {
+        callback();
+      }
+    };
+
     return {
       // 直播数据
       liveShowName: '',
@@ -169,21 +256,73 @@ export default {
         seconds: '00'
       },
       countdownTimer: null,
-      hasRefreshedAfterCountdown: false, // 新增：标记是否已经刷新过
-      isRefreshing: false, // 新增：防止重复刷新
+      hasRefreshedAfterCountdown: false,
+      isRefreshing: false,
 
       // 互动
       commentText: '',
 
-      // 当前年份
-      currentYear: new Date().getFullYear()
+      // 报名表单相关
+      showRegistrationModal: false,
+      registrationLoading: false,
+      registrationData: {
+        province: '',
+        city: '',
+        district: '',
+        name: '',
+        organization: '',
+        department: '',
+        title: '',
+        position: '',
+        phone: ''
+      },
+      registrationRules: {
+        province: [
+          { required: true, validator: validateRequired, trigger: 'change' }
+        ],
+        city: [
+          { required: true, validator: validateRequired, trigger: 'change' }
+        ],
+        district: [
+          { required: true, validator: validateRequired, trigger: 'change' }
+        ],
+        name: [
+          { required: true, validator: validateRequired, trigger: 'blur' }
+        ],
+        organization: [
+          { required: true, validator: validateRequired, trigger: 'blur' }
+        ],
+        department: [
+          { required: true, validator: validateRequired, trigger: 'blur' }
+        ],
+        title: [
+          { required: true, validator: validateRequired, trigger: 'blur' }
+        ],
+        position: [
+          { required: true, validator: validateRequired, trigger: 'blur' }
+        ],
+        phone: [
+          { required: true, validator: validateRequired, trigger: 'blur' },
+          { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }
+        ],
+        // 复合验证规则
+        region: [
+          { validator: validateRegion, trigger: 'change' }
+        ]
+      },
+
+      // 省市区数据 - 直接从areaData导入
+      areaData: areaData, // 完整数据
+      provinces: [], // 省份列表
+      cities: [], // 城市列表
+      districts: [], // 区县列表
     };
   },
 
   mounted() {
     console.log('页面加载，初始化参数');
     this.initFromUrlParams();
-    // this.startCountdown();
+    this.initAreaData();
 
     // 微信浏览器授权逻辑（保留原有逻辑）
     const urlParams = new URLSearchParams(window.location.search);
@@ -204,11 +343,83 @@ export default {
     this.destroyAllPlayers();
     if (this.countdownTimer) {
       clearInterval(this.countdownTimer);
-      this.countdownTimer = null; // 清空定时器变量，防止内存泄漏
+      this.countdownTimer = null;
     }
   },
 
   methods: {
+    // 初始化省市区数据
+    initAreaData() {
+      // 从areaData中提取省份数据
+      this.provinces = this.areaData.map(province => ({
+        value: province.value,
+        text: province.text
+      }));
+    },
+
+    // 处理省份选择变化
+    handleProvinceChange(provinceCode) {
+      if (!provinceCode) {
+        this.cities = [];
+        this.districts = [];
+        this.registrationData.city = '';
+        this.registrationData.district = '';
+        return;
+      }
+
+      // 查找选中的省份
+      const selectedProvince = this.areaData.find(province => province.value === provinceCode);
+
+      if (selectedProvince && selectedProvince.children) {
+        // 提取该省份下的城市数据
+        this.cities = selectedProvince.children.map(city => ({
+          value: city.value,
+          text: city.text
+        }));
+      } else {
+        this.cities = [];
+      }
+
+      // 重置城市和区县选择
+      this.registrationData.city = '';
+      this.registrationData.district = '';
+      this.districts = [];
+    },
+
+    // 处理城市选择变化
+    handleCityChange(cityCode) {
+      if (!cityCode) {
+        this.districts = [];
+        this.registrationData.district = '';
+        return;
+      }
+
+      // 查找选中的省份
+      const selectedProvince = this.areaData.find(province =>
+        province.children && province.children.some(city => city.value === cityCode)
+      );
+
+      if (selectedProvince) {
+        // 查找选中的城市
+        const selectedCity = selectedProvince.children.find(city => city.value === cityCode);
+
+        if (selectedCity && selectedCity.children) {
+          // 提取该城市下的区县数据
+          this.districts = selectedCity.children.map(district => ({
+            value: district.value,
+            text: district.text
+          }));
+        } else {
+          this.districts = [];
+        }
+      } else {
+        this.districts = [];
+      }
+
+      // 重置区县选择
+      this.registrationData.district = '';
+    },
+
     // 检测是否是微信浏览器
     isWechatBrowser() {
       const userAgent = navigator.userAgent.toLowerCase();
@@ -284,7 +495,7 @@ export default {
           this.hasRefreshedAfterCountdown = false;
 
           if (data.liveCover) {
-            this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`; 
+            this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`;
           }
 
           // 启动倒计时
@@ -711,7 +922,8 @@ export default {
       // 每秒更新一次
       this.countdownTimer = setInterval(updateCountdown, 1000);
     },
-    // 新增：清除倒计时的方法
+
+    // 清除倒计时的方法
     clearCountdown() {
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
@@ -719,11 +931,12 @@ export default {
       }
       this.countdown = { days: '00', hours: '00', minutes: '00', seconds: '00' };
     },
+
     padZero(num) {
       return num.toString().padStart(2, '0');
     },
 
-    // 【新增方法】刷新直播状态
+    // 刷新直播状态
     async refreshLiveStatus() {
       if (!this.id) return;
 
@@ -794,6 +1007,7 @@ export default {
         this.isRefreshing = false;
       }
     },
+
     // 格式化时间
     formatDateTime(dateTime) {
       if (!dateTime) return '';
@@ -845,6 +1059,95 @@ export default {
       // 这里可以调用API提交评论
       this.$Message.success('评论已发送');
       this.commentText = '';
+    },
+
+    // 提交报名表单
+    submitRegistration() {
+      this.$refs.registrationForm.validate((valid) => {
+        if (valid) {
+          this.registrationLoading = true;
+
+          // 查找完整的地区信息
+          let provinceName = '';
+          let cityName = '';
+          let districtName = '';
+
+          // 查找省份
+          const province = this.provinces.find(p => p.value === this.registrationData.province);
+          if (province) {
+            provinceName = province.text;
+
+            // 查找城市
+            const city = this.cities.find(c => c.value === this.registrationData.city);
+            if (city) {
+              cityName = city.text;
+
+              // 查找区县
+              const district = this.districts.find(d => d.value === this.registrationData.district);
+              if (district) {
+                districtName = district.text;
+              }
+            }
+          }
+
+          // 合并所有数据
+          const submitData = {
+            provinceCode: this.registrationData.province,
+            provinceName: provinceName,
+            cityCode: this.registrationData.city,
+            cityName: cityName,
+            districtCode: this.registrationData.district,
+            districtName: districtName,
+            fullRegion: provinceName + cityName + districtName,
+            name: this.registrationData.name,
+            organization: this.registrationData.organization,
+            department: this.registrationData.department,
+            title: this.registrationData.title,
+            position: this.registrationData.position,
+            phone: this.registrationData.phone
+          };
+
+          console.log('报名信息:', submitData);
+
+          // 模拟API调用
+          setTimeout(() => {
+            this.$Message.success('报名信息提交成功！');
+            this.registrationLoading = false;
+            this.showRegistrationModal = false;
+
+            // 清空表单
+            this.resetRegistrationForm();
+          }, 1000);
+        } else {
+          this.$Message.error('请填写完整的报名信息');
+        }
+      });
+    },
+
+    // 取消报名
+    cancelRegistration() {
+      this.showRegistrationModal = false;
+      this.resetRegistrationForm();
+    },
+
+    // 重置报名表单 - 确保这是唯一的方法
+    resetRegistrationForm() {
+      this.registrationData = {
+        province: '',
+        city: '',
+        district: '',
+        name: '',
+        organization: '',
+        department: '',
+        title: '',
+        position: '',
+        phone: ''
+      };
+      this.cities = [];
+      this.districts = [];
+      if (this.$refs.registrationForm) {
+        this.$refs.registrationForm.resetFields();
+      }
     }
   }
 };
@@ -853,7 +1156,6 @@ export default {
 <style scoped>
 body {
   box-sizing: border-box;
-
 }
 
 /* 整体布局 */
@@ -863,6 +1165,7 @@ body {
   margin: 20px auto;
   gap: 20px;
   padding: 0 20px;
+  position: relative;
 }
 
 .live-left {
@@ -873,6 +1176,7 @@ body {
 .live-right {
   display: flex;
   min-width: 300px;
+  flex-direction: column;
 }
 
 /* 播放器容器 */
@@ -880,7 +1184,6 @@ body {
   position: relative;
   width: 100%;
   padding-top: 56.25%;
-  /* 16:9 比例 */
   background: #000;
   border-radius: 3px;
   overflow: hidden;
@@ -922,7 +1225,6 @@ body {
 .cover-image {
   width: 100%;
   height: 100%;
-  /* object-fit: contain; */
 }
 
 .cover-placeholder {
@@ -1047,50 +1349,41 @@ body {
   color: #434343;
 }
 
-.live-mode {
-  color: #52c41a;
-  font-size: 14px;
-  display: inline-block;
-  margin-right: 10px;
-}
-
 /* 右侧区域 */
 .live-right {
-  display: flex;
-  gap: 20px;
-}
-
-.interaction-section,
-.intro-section {
-  background: white;
-  border-radius: 8px;
-  padding: 20px 10px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.interaction-section {
-  width: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.section-title {
-  font-size: 18px;
-  color: #333;
-  margin: 0 0 15px 0;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f0f0f0;
+.interaction-section {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  height: 650px;
+  position: sticky;
+  top: 20px;
 }
 
-/* 互动区域 */
+/* 评论区样式 */
+.comment-area {
+  flex: 1;
+  overflow-y: auto;
+  margin-bottom: 15px;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+  padding: 10px;
+}
+
 .comment-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 30px 0;
+  height: 100%;
   color: #999;
-  flex: 1;
 }
 
 .empty-icon {
@@ -1105,7 +1398,7 @@ body {
 .comment-input-area {
   display: flex;
   gap: 10px;
-  margin-top: 15px;
+  margin-top: auto;
 }
 
 .comment-input {
@@ -1134,6 +1427,14 @@ body {
 
 .comment-submit:hover {
   background: #40a9ff;
+}
+
+.section-title {
+  font-size: 18px;
+  color: #333;
+  margin: 0 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 /* 直播介绍 */
@@ -1296,6 +1597,41 @@ body {
   font-size: 16px;
 }
 
+/* 报名表单悬浮按钮 */
+.registration-fab {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  background: linear-gradient(135deg, #1890ff, #40a9ff);
+  color: white;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.3);
+  transition: all 0.3s ease;
+  z-index: 1000;
+}
+
+.registration-fab:hover {
+  transform: scale(1.1);
+  box-shadow: 0 6px 16px rgba(24, 144, 255, 0.4);
+}
+
+.fab-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.fab-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
 /* video.js样式穿透 */
 ::v-deep .video-js {
   width: 100% !important;
@@ -1312,6 +1648,40 @@ body {
   height: 1.5em !important;
   line-height: 1.5em !important;
   border-radius: 50% !important;
+}
+
+/* 自定义弹框样式 - 解决padding问题 */
+::v-deep .registration-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+::v-deep .registration-modal .ivu-modal {
+  top: 0;
+  margin: 0 auto;
+}
+
+::v-deep .registration-modal .ivu-modal-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+::v-deep .registration-modal .ivu-modal-content {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+/* 必填项标记 */
+::v-deep .ivu-form-item-label:before {
+  content: '*';
+  display: inline-block;
+  margin-right: 4px;
+  line-height: 1;
+  font-family: SimSun;
+  font-size: 12px;
+  color: #ed4014;
 }
 
 /* 响应式调整 */
@@ -1366,6 +1736,32 @@ body {
   .play-text {
     font-size: 16px;
   }
+
+  .interaction-section {
+    height: 400px;
+    position: static;
+  }
+
+  .registration-fab {
+    bottom: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+  }
+
+  .fab-icon {
+    font-size: 20px;
+  }
+
+  .fab-text {
+    font-size: 10px;
+  }
+
+  /* 移动端弹框样式 */
+  ::v-deep .registration-modal .ivu-modal {
+    width: 90% !important;
+    margin: 0 auto;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1377,6 +1773,17 @@ body {
 
   .countdown-timer {
     gap: 4px;
+  }
+
+  .interaction-section {
+    height: 350px;
+  }
+
+  .registration-fab {
+    bottom: 15px;
+    right: 15px;
+    width: 45px;
+    height: 45px;
   }
 }
 </style>
