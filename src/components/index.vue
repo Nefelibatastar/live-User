@@ -133,55 +133,22 @@
       @on-ok="submitRegistration" @on-cancel="cancelRegistration" class-name="registration-modal">
       <Form ref="registrationForm" :model="registrationData" :rules="registrationRules" label-position="top">
         <div style="font-size: 15px;font-weight: 600;margin-bottom: 10px;">请如实填写以下信息</div>
-        <!-- 省市区三级联动 -->
-        <FormItem label="地区" prop="region" required>
-          <Row :gutter="8">
-            <Col span="8">
-            <Select v-model="registrationData.province" placeholder="请选择省" @on-change="handleProvinceChange" clearable>
-              <Option v-for="province in provinces" :key="province.value" :value="province.value">{{ province.text }}
-              </Option>
-            </Select>
-            </Col>
-            <Col span="8">
-            <Select v-model="registrationData.city" placeholder="请选择市" :disabled="!registrationData.province"
-              @on-change="handleCityChange" clearable>
-              <Option v-for="city in cities" :key="city.value" :value="city.value">{{ city.text }}</Option>
-            </Select>
-            </Col>
-            <Col span="8">
-            <Select v-model="registrationData.district" placeholder="请选择区/县" :disabled="!registrationData.city"
-              clearable>
-              <Option v-for="district in districts" :key="district.value" :value="district.value">{{ district.text }}
-              </Option>
-            </Select>
-            </Col>
-          </Row>
-        </FormItem>
 
-        <!-- 其他表单项保持不变 -->
-        <FormItem label="姓名" prop="name" required>
-          <Input v-model="registrationData.name" placeholder="请输入姓名" clearable />
-        </FormItem>
+        <!-- 根据 entryFromData 动态生成表单项 -->
+        <Form-item v-for="field in entryFromData" :key="field.type + field.name" :label="field.name" :prop="field.type" :required="field.required">
+          <!-- 性别选择框 -->
+          <Select v-if="field.type === 'gender'" v-model="registrationData[field.type]" placeholder="请选择性别" clearable>
+            <Option value="male">男</Option>
+            <Option value="female">女</Option>
+          </Select>
 
-        <FormItem label="单位" prop="organization" required>
-          <Input v-model="registrationData.organization" placeholder="请输入单位全称" clearable />
-        </FormItem>
+          <!-- 出生年月选择器 -->
+          <DatePicker v-else-if="field.type === 'birthday'" type="date" v-model="registrationData[field.type]"
+            :placeholder="field.placeholder" style="width: 100%" clearable />
 
-        <FormItem label="部门" prop="department" required>
-          <Input v-model="registrationData.department" placeholder="请输入部门名称" clearable />
-        </FormItem>
-
-        <FormItem label="职称" prop="title" required>
-          <Input v-model="registrationData.title" placeholder="请输入您的职称" clearable />
-        </FormItem>
-
-        <FormItem label="职务" prop="position" required>
-          <Input v-model="registrationData.position" placeholder="请输入您的职务" clearable />
-        </FormItem>
-
-        <FormItem label="联系电话" prop="phone" required>
-          <Input v-model="registrationData.phone" placeholder="请输入您的电话号码" clearable />
-        </FormItem>
+          <!-- 其他字段使用输入框 -->
+          <Input v-else v-model="registrationData[field.type]" :placeholder="field.placeholder" clearable />
+        </Form-item>
       </Form>
       <div slot="footer">
         <Button @click="cancelRegistration">取消</Button>
@@ -196,30 +163,10 @@ import videojs from "video.js";
 import "video.js/dist/video-js.css";
 import flvjs from 'flv.js'
 import { config } from '../config'
-// 导入省市区数据 - 这里使用简化版，实际项目中可以使用完整数据
-import areaData from '../utils/areaData'
 
 export default {
   name: "LivePlayerPage",
   data() {
-    // 验证所有字段必填
-    const validateRequired = (rule, value, callback) => {
-      if (!value || value.trim() === '') {
-        callback(new Error('此项为必填项'));
-      } else {
-        callback();
-      }
-    };
-
-    // 验证地区选择完整
-    const validateRegion = (rule, value, callback) => {
-      if (!this.registrationData.province || !this.registrationData.city || !this.registrationData.district) {
-        callback(new Error('请选择完整的省市区'));
-      } else {
-        callback();
-      }
-    };
-
     return {
       // 直播数据
       liveShowName: '',
@@ -265,64 +212,15 @@ export default {
       // 报名表单相关
       showRegistrationModal: false,
       registrationLoading: false,
-      registrationData: {
-        province: '',
-        city: '',
-        district: '',
-        name: '',
-        organization: '',
-        department: '',
-        title: '',
-        position: '',
-        phone: ''
-      },
-      registrationRules: {
-        province: [
-          { required: true, validator: validateRequired, trigger: 'change' }
-        ],
-        city: [
-          { required: true, validator: validateRequired, trigger: 'change' }
-        ],
-        district: [
-          { required: true, validator: validateRequired, trigger: 'change' }
-        ],
-        name: [
-          { required: true, validator: validateRequired, trigger: 'blur' }
-        ],
-        organization: [
-          { required: true, validator: validateRequired, trigger: 'blur' }
-        ],
-        department: [
-          { required: true, validator: validateRequired, trigger: 'blur' }
-        ],
-        title: [
-          { required: true, validator: validateRequired, trigger: 'blur' }
-        ],
-        position: [
-          { required: true, validator: validateRequired, trigger: 'blur' }
-        ],
-        phone: [
-          { required: true, validator: validateRequired, trigger: 'blur' },
-          { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }
-        ],
-        // 复合验证规则
-        region: [
-          { validator: validateRegion, trigger: 'change' }
-        ]
-      },
-
-      // 省市区数据 - 直接从areaData导入
-      areaData: areaData, // 完整数据
-      provinces: [], // 省份列表
-      cities: [], // 城市列表
-      districts: [], // 区县列表
+      entryFromData: [], // 从接口获取的报名表配置
+      registrationData: {}, // 动态表单数据
+      registrationRules: {} // 动态表单验证规则
     };
   },
 
   mounted() {
     console.log('页面加载，初始化参数');
     this.initFromUrlParams();
-    this.initAreaData();
 
     // 微信浏览器授权逻辑（保留原有逻辑）
     const urlParams = new URLSearchParams(window.location.search);
@@ -348,78 +246,6 @@ export default {
   },
 
   methods: {
-    // 初始化省市区数据
-    initAreaData() {
-      // 从areaData中提取省份数据
-      this.provinces = this.areaData.map(province => ({
-        value: province.value,
-        text: province.text
-      }));
-    },
-
-    // 处理省份选择变化
-    handleProvinceChange(provinceCode) {
-      if (!provinceCode) {
-        this.cities = [];
-        this.districts = [];
-        this.registrationData.city = '';
-        this.registrationData.district = '';
-        return;
-      }
-
-      // 查找选中的省份
-      const selectedProvince = this.areaData.find(province => province.value === provinceCode);
-
-      if (selectedProvince && selectedProvince.children) {
-        // 提取该省份下的城市数据
-        this.cities = selectedProvince.children.map(city => ({
-          value: city.value,
-          text: city.text
-        }));
-      } else {
-        this.cities = [];
-      }
-
-      // 重置城市和区县选择
-      this.registrationData.city = '';
-      this.registrationData.district = '';
-      this.districts = [];
-    },
-
-    // 处理城市选择变化
-    handleCityChange(cityCode) {
-      if (!cityCode) {
-        this.districts = [];
-        this.registrationData.district = '';
-        return;
-      }
-
-      // 查找选中的省份
-      const selectedProvince = this.areaData.find(province =>
-        province.children && province.children.some(city => city.value === cityCode)
-      );
-
-      if (selectedProvince) {
-        // 查找选中的城市
-        const selectedCity = selectedProvince.children.find(city => city.value === cityCode);
-
-        if (selectedCity && selectedCity.children) {
-          // 提取该城市下的区县数据
-          this.districts = selectedCity.children.map(district => ({
-            value: district.value,
-            text: district.text
-          }));
-        } else {
-          this.districts = [];
-        }
-      } else {
-        this.districts = [];
-      }
-
-      // 重置区县选择
-      this.registrationData.district = '';
-    },
-
     // 检测是否是微信浏览器
     isWechatBrowser() {
       const userAgent = navigator.userAgent.toLowerCase();
@@ -491,6 +317,9 @@ export default {
           this.startTime = data.startTime;
           this.liveStatus = data.liveStatus;
 
+          // 处理报名表数据
+          this.processEntryFromData(data.entryFromData);
+
           // 重置刷新标志
           this.hasRefreshedAfterCountdown = false;
 
@@ -514,6 +343,124 @@ export default {
       }
     },
 
+    // 处理报名表数据
+    processEntryFromData(entryFromData) {
+      if (!entryFromData || !Array.isArray(entryFromData)) {
+        this.entryFromData = [];
+        this.registrationData = {};
+        this.registrationRules = {};
+        return;
+      }
+
+      this.entryFromData = entryFromData;
+      this.registrationData = {};
+      this.registrationRules = {};
+      // 初始化表单数据和验证规则
+      entryFromData.forEach(field => {
+        // 初始化字段数据
+        this.registrationData[field.type] = '';
+
+        // 初始化验证规则
+        this.registrationRules[field.type] = [];
+
+        // 只对必填字段添加必填验证
+        if (field.required) {
+          this.registrationRules[field.type].push({
+            required: true,
+            message: `${field.name}不能为空`,
+            trigger: field.type === 'gender' ? 'change' : 'blur'
+          });
+        }
+
+        // 根据字段类型添加格式验证（无论是否必填，只要填写了就验证格式）
+        if (field.type === 'phone') {
+          this.registrationRules[field.type].push({
+            validator: (rule, value, callback) => {
+              if (!value) {
+                // 如果非必填且为空，直接通过
+                if (!field.required) {
+                  callback();
+                } else {
+                  // 必填字段已经在上面验证了，这里不再处理
+                  callback();
+                }
+              } else {
+                // 如果有值，验证格式
+                const phonePattern = /^1[3-9]\d{9}$/;
+                if (!phonePattern.test(value)) {
+                  callback(new Error('请输入正确的手机号码'));
+                } else {
+                  callback();
+                }
+              }
+            },
+            trigger: 'blur'
+          });
+        } else if (field.type === 'idCard') {
+          this.registrationRules[field.type].push({
+            validator: (rule, value, callback) => {
+              if (!value) {
+                if (!field.required) {
+                  callback();
+                } else {
+                  callback();
+                }
+              } else {
+                const idCardPattern = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/;
+                if (!idCardPattern.test(value)) {
+                  callback(new Error('请输入正确的身份证号'));
+                } else {
+                  callback();
+                }
+              }
+            },
+            trigger: 'blur'
+          });
+        } else if (field.type === 'email') {
+          this.registrationRules[field.type].push({
+            validator: (rule, value, callback) => {
+              if (!value) {
+                if (!field.required) {
+                  callback();
+                } else {
+                  callback();
+                }
+              } else {
+                const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailPattern.test(value)) {
+                  callback(new Error('请输入正确的邮箱地址'));
+                } else {
+                  callback();
+                }
+              }
+            },
+            trigger: 'blur'
+          });
+        } else if (field.type === 'age') {
+          this.registrationRules[field.type].push({
+            validator: (rule, value, callback) => {
+              if (!value) {
+                if (!field.required) {
+                  callback();
+                } else {
+                  callback();
+                }
+              } else {
+                const age = parseInt(value);
+                if (isNaN(age) || age < 0 || age > 150) {
+                  callback(new Error('请输入有效的年龄(0-150)'));
+                } else {
+                  callback();
+                }
+              }
+            },
+            trigger: 'blur'
+          });
+        }
+      });
+      
+    },
+    
     // 解析流数据
     async parseStreamData(data) {
       console.log('开始解析流数据，指定格式:', this.streamType);
@@ -963,6 +910,9 @@ export default {
           this.startTime = data.startTime;
           this.liveStatus = newStatus;
 
+          // 更新报名表数据
+          this.processEntryFromData(data.entryFromData);
+
           if (data.liveCover) {
             this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`;
           }
@@ -1067,57 +1017,41 @@ export default {
         if (valid) {
           this.registrationLoading = true;
 
-          // 查找完整的地区信息
-          let provinceName = '';
-          let cityName = '';
-          let districtName = '';
-
-          // 查找省份
-          const province = this.provinces.find(p => p.value === this.registrationData.province);
-          if (province) {
-            provinceName = province.text;
-
-            // 查找城市
-            const city = this.cities.find(c => c.value === this.registrationData.city);
-            if (city) {
-              cityName = city.text;
-
-              // 查找区县
-              const district = this.districts.find(d => d.value === this.registrationData.district);
-              if (district) {
-                districtName = district.text;
-              }
-            }
-          }
-
-          // 合并所有数据
+          // 准备提交的数据
           const submitData = {
-            provinceCode: this.registrationData.province,
-            provinceName: provinceName,
-            cityCode: this.registrationData.city,
-            cityName: cityName,
-            districtCode: this.registrationData.district,
-            districtName: districtName,
-            fullRegion: provinceName + cityName + districtName,
-            name: this.registrationData.name,
-            organization: this.registrationData.organization,
-            department: this.registrationData.department,
-            title: this.registrationData.title,
-            position: this.registrationData.position,
-            phone: this.registrationData.phone
+            liveId: this.id,
+            fields: []
           };
 
-          console.log('报名信息:', submitData);
+          // 根据 entryFromData 构建提交数据
+          this.entryFromData.forEach(field => {
+            submitData.fields.push({
+              type: field.type,
+              name: field.name,
+              value: this.registrationData[field.type] || ''
+            });
+          });
 
-          // 模拟API调用
-          setTimeout(() => {
-            this.$Message.success('报名信息提交成功！');
-            this.registrationLoading = false;
-            this.showRegistrationModal = false;
+          console.log('提交报名信息:', submitData);
 
-            // 清空表单
-            this.resetRegistrationForm();
-          }, 1000);
+          // 调用API提交报名信息
+          this.$api.submitRegistration(submitData)
+            .then(res => {
+              if (res.code === 200) {
+                this.$Message.success('报名信息提交成功！');
+                this.registrationLoading = false;
+                this.showRegistrationModal = false;
+                this.resetRegistrationForm();
+              } else {
+                this.$Message.error(res.message || '提交失败');
+                this.registrationLoading = false;
+              }
+            })
+            .catch(err => {
+              console.error('提交报名信息失败:', err);
+              this.$Message.error('提交失败，请重试');
+              this.registrationLoading = false;
+            });
         } else {
           this.$Message.error('请填写完整的报名信息');
         }
@@ -1130,21 +1064,13 @@ export default {
       this.resetRegistrationForm();
     },
 
-    // 重置报名表单 - 确保这是唯一的方法
+    // 重置报名表单
     resetRegistrationForm() {
-      this.registrationData = {
-        province: '',
-        city: '',
-        district: '',
-        name: '',
-        organization: '',
-        department: '',
-        title: '',
-        position: '',
-        phone: ''
-      };
-      this.cities = [];
-      this.districts = [];
+      // 清空所有表单字段
+      Object.keys(this.registrationData).forEach(key => {
+        this.registrationData[key] = '';
+      });
+
       if (this.$refs.registrationForm) {
         this.$refs.registrationForm.resetFields();
       }
@@ -1672,18 +1598,6 @@ body {
   max-height: 80vh;
   overflow-y: auto;
 }
-
-/* 必填项标记 */
-::v-deep .ivu-form-item-label:before {
-  content: '*';
-  display: inline-block;
-  margin-right: 4px;
-  line-height: 1;
-  font-family: SimSun;
-  font-size: 12px;
-  color: #ed4014;
-}
-
 /* 响应式调整 */
 @media (max-width: 768px) {
   .live-container {

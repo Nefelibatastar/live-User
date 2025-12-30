@@ -9,6 +9,14 @@ const api = {
   getById: (params) => request.get(`/liveStream/getById`, { params }),
   // 新增菜单
   // addProgram: (params) => request.post(`${base}/program/addProgram`, params),
+  // userRegistrationData/add 用户报名信息新增
+  add: (params) => request.post(`/userRegistrationData/add`, params),
+  // userRegistrationData/getId 用户报名信息回显
+  getId: (params) => request.get(`/userRegistrationData/getId`, { params }),
+  // userRegistrationData/list 用户报名信息查询
+  list: (params) => request.get(`/userRegistrationData/list`, { params }),
+  // userRegistrationData/update 用户报名信息修改
+  update: (params) => request.put(`userRegistrationData/update`, params),
 };
 
 export default api;
