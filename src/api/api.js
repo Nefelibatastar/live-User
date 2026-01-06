@@ -14,7 +14,7 @@ const api = {
   // userRegistrationData/getId 用户报名信息回显
   getId: (params) => request.get(`/userRegistrationData/getId`, { params }),
   // userRegistrationData/list 用户报名信息查询
-  list: (params) => request.get(`/userRegistrationData/list`, { params }),
+  // list: (params) => request.get(`/userRegistrationData/list`, { params }),
   // userRegistrationData/update 用户报名信息修改
   update: (params) => request.put(`userRegistrationData/update`, params),
 };

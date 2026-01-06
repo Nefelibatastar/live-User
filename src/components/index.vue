@@ -123,36 +123,73 @@
     </div>
 
     <!-- 报名表单悬浮按钮 -->
-    <div class="registration-fab" @click="showRegistrationModal = true">
+    <div class="registration-fab" @click="openRegistrationModal">
       <div class="fab-icon">📝</div>
       <div class="fab-text">报名表</div>
     </div>
 
     <!-- 报名表单弹框 -->
-    <Modal v-model="showRegistrationModal" :title="liveShowName" width="500" :mask-closable="false"
-      @on-ok="submitRegistration" @on-cancel="cancelRegistration" class-name="registration-modal">
-      <Form ref="registrationForm" :model="registrationData" :rules="registrationRules" label-position="top">
-        <div style="font-size: 15px;font-weight: 600;margin-bottom: 10px;">请如实填写以下信息</div>
+    <Modal v-model="showRegistrationModal" :title="isRegistered ? '修改报名信息' : liveShowName + ' - 报名表'" width="500"
+      :mask-closable="false" @on-ok="submitRegistration" @on-cancel="cancelRegistration"
+      class-name="registration-modal">
+      <div class="registration-modal-content">
+        <!-- 标题区域（固定） -->
+        <div class="modal-header-section">
+          <!-- 添加报名状态提示 -->
+          <Alert v-if="isRegistered" type="info" show-icon style="margin-bottom: 15px;">
+            您已报名，可修改信息
+          </Alert>
 
-        <!-- 根据 entryFromData 动态生成表单项 -->
-        <Form-item v-for="field in entryFromData" :key="field.type + field.name" :label="field.name" :prop="field.type" :required="field.required">
-          <!-- 性别选择框 -->
-          <Select v-if="field.type === 'gender'" v-model="registrationData[field.type]" placeholder="请选择性别" clearable>
-            <Option value="male">男</Option>
-            <Option value="female">女</Option>
-          </Select>
+          <div class="registration-title">
+            {{ isRegistered ? '修改报名信息' : '请如实填写以下信息' }}
+          </div>
+        </div>
 
-          <!-- 出生年月选择器 -->
-          <DatePicker v-else-if="field.type === 'birthday'" type="date" v-model="registrationData[field.type]"
-            :placeholder="field.placeholder" style="width: 100%" clearable />
+        <!-- 表单内容区域（可滚动） -->
+        <div class="modal-form-section">
+          <Form ref="registrationForm" :model="registrationData" :rules="registrationRules" label-position="top">
+            <!-- 根据 entryFromData 动态生成表单项 -->
+            <Form-item v-for="(field, index) in entryFromData" :key="field.uniqueKey || field.type + index"
+              :label="(index + 1).toString().padStart(2, '0') + ' ' + field.name" :prop="field.uniqueKey">
+              <!-- 性别选择框 -->
+              <Select v-if="field.type === 'gender'" v-model="registrationData[field.uniqueKey]" placeholder="请选择性别"
+                clearable>
+                <Option value="male">男</Option>
+                <Option value="female">女</Option>
+              </Select>
 
-          <!-- 其他字段使用输入框 -->
-          <Input v-else v-model="registrationData[field.type]" :placeholder="field.placeholder" clearable />
-        </Form-item>
-      </Form>
-      <div slot="footer">
-        <Button @click="cancelRegistration">取消</Button>
-        <Button type="primary" @click="submitRegistration" :loading="registrationLoading">提交</Button>
+              <!-- 出生年月选择器 -->
+              <DatePicker v-else-if="field.type === 'birthday'" type="date"
+                :value="registrationData[field.uniqueKey] ? new Date(registrationData[field.uniqueKey]) : null"
+                @on-change="(date) => handleBirthdayChange(date, field.uniqueKey)"
+                :placeholder="field.placeholder || '请选择出生日期'" style="width: 100%" clearable format="yyyy-MM-dd" />
+
+              <!-- 文本输入框 -->
+              <Input v-else v-model="registrationData[field.uniqueKey]"
+                :placeholder="field.placeholder || '请输入' + field.name" clearable />
+            </Form-item>
+          </Form>
+        </div>
+      </div>
+    </Modal>
+
+    <!-- 登录提示弹框 -->
+    <Modal v-model="showLoginModal" title="温馨提示" width="400" :mask-closable="false" :closable="false"
+      :footer-hide="true" class-name="login-modal">
+      <div class="login-modal-content">
+        <div class="login-header">
+          <div class="login-title">您当前尚未登录，请前往登录</div>
+        </div>
+        <div class="login-body">
+          <div class="login-icon"> <img
+              src="https://j.weizan.cn/live-statics/yingxiao-wx-front/mk-static/img/loginTips.f28e6b8e.png" alt=""
+              style="width: 100%;"> </div>
+          <!-- <div class="login-message">登录后即可填写报名表</div> -->
+        </div>
+        <div class="login-footer">
+          <Button type="text" @click="handleLoginCancel" class="login-cancel-btn">暂不登录，继续操作</Button>
+          <Button type="primary" @click="handleLoginConfirm" class="login-confirm-btn">前往登录</Button>
+        </div>
       </div>
     </Modal>
   </div>
@@ -214,24 +251,46 @@ export default {
       registrationLoading: false,
       entryFromData: [], // 从接口获取的报名表配置
       registrationData: {}, // 动态表单数据
-      registrationRules: {} // 动态表单验证规则
+      registrationRules: {}, // 动态表单验证规则
+      isRegistered: false, // 是否已报名
+      registrationId: null, // 报名记录ID（用于修改）
+      userId: '', // 用户ID（从微信授权获取）
+      isEntryFrom: '0', // 是否有报名表
+      entryFromId: '', // 报名表ID
+
+      // 登录提示弹框
+      showLoginModal: false,
+
+      // 新增：控制表单初始验证的标记
+      formInitialized: false,
     };
   },
 
   mounted() {
     console.log('页面加载，初始化参数');
+    // 在初始化URL参数之前，先尝试从本地存储加载数据
+    this.tryLoadFromLocalStorage();
     this.initFromUrlParams();
+    this.cleanupExpiredLocalRegistrations();
 
-    // 微信浏览器授权逻辑（保留原有逻辑）
+    // 微信浏览器授权逻辑
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
-    console.log('code', urlParams, code)
+
+    // 尝试从本地存储获取用户ID
+    const storedUser = localStorage.getItem('userInfo');
+    if (storedUser) {
+      try {
+        const userInfo = JSON.parse(storedUser);
+        this.userId = userInfo.id || userInfo.userId;
+      } catch (e) {
+        console.error('解析用户信息失败:', e);
+      }
+    }
 
     if (this.isWechatBrowser()) {
       if (code) {
         this.handleWechatCallback();
-      } else {
-        this.wechatAuth();
       }
     }
   },
@@ -252,6 +311,26 @@ export default {
       return userAgent.includes('micromessenger');
     },
 
+    // 尝试从本地存储加载数据
+    tryLoadFromLocalStorage() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const id = urlParams.get('id');
+      if (id) {
+        const storageKey = `registration_${id}`;
+        const localData = localStorage.getItem(storageKey);
+        if (localData) {
+          try {
+            const parsedData = JSON.parse(localData);
+            console.log('从本地存储预加载数据:', parsedData);
+            // 暂时保存，等待接口数据到来后填充
+            this.tempLocalData = parsedData;
+          } catch (e) {
+            console.error('解析本地存储数据失败:', e);
+          }
+        }
+      }
+    },
+
     // 微信授权登录主方法
     wechatAuth() {
       const appid = 'wx9e05ef34b2bc54b6';
@@ -265,18 +344,95 @@ export default {
     },
 
     // 处理微信授权回调
-    handleWechatCallback() {
+    async handleWechatCallback() {
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
       const storedState = localStorage.getItem('wechat_auth_state');
-      console.log('??', code, state, storedState)
 
       if (state && state === storedState) {
         localStorage.removeItem('wechat_auth_state');
         if (code) {
-          // 调用后端接口逻辑
+          try {
+            // 调用后端接口获取用户信息
+            const res = await this.$api.wechatLogin({ code });
+            if (res.code === 200 && res.data) {
+              // 存储用户信息
+              localStorage.setItem('userInfo', JSON.stringify(res.data));
+              this.userId = res.data.id || res.data.userId;
+              this.$Message.success('登录成功');
+
+              // 关闭登录弹框
+              this.showLoginModal = false;
+
+              // 重新检查报名状态
+              if (this.showRegistrationModal) {
+                await this.checkLocalRegistration();
+                await this.checkRegistrationStatus();
+              }
+            }
+          } catch (error) {
+            console.error('获取用户信息失败:', error);
+            this.$Message.error('登录失败');
+          }
         }
+      }
+    },
+
+    // 获取报名详情回显
+    async getRegistrationDetail() {
+      if (!this.registrationId) return;
+
+      try {
+        const res = await this.$api.userRegistrationData.getId({
+          id: this.registrationId
+        });
+
+        if (res.code === 200 && res.data) {
+          const detail = res.data;
+          // 处理服务器返回的jsonData
+          await this.processServerJsonData(detail);
+        }
+      } catch (error) {
+        console.error('获取报名详情失败:', error);
+      }
+    },
+
+    // 处理服务器返回的jsonData
+    async processServerJsonData(serverData) {
+      try {
+        let parsedData = {};
+        if (serverData?.jsonData) {
+          try {
+            parsedData = JSON.parse(serverData.jsonData);
+          } catch (e) {
+            console.error('解析jsonData失败:', e);
+          }
+        }
+
+        // 更新表单数据
+        this.entryFromData.forEach(field => {
+          let value = '';
+          if (parsedData[field.fieldKey] !== undefined) {
+            value = parsedData[field.fieldKey];
+          } else if (parsedData[field.type] !== undefined) {
+            value = parsedData[field.type];
+          }
+
+          if (value !== undefined && value !== null) {
+            this.$set(this.registrationData, field.uniqueKey, value);
+          }
+        });
+
+        // 保存到本地存储
+        await this.saveRegistrationToLocal({
+          registrationId: serverData.id,
+          registrationData: parsedData,
+          serverData: serverData
+        });
+
+      } catch (error) {
+        console.error('处理服务器jsonData失败:', error);
       }
     },
 
@@ -316,9 +472,11 @@ export default {
           this.liveShowName = data.liveShowName;
           this.startTime = data.startTime;
           this.liveStatus = data.liveStatus;
+          this.isEntryFrom = data.isEntryFrom || '0';
+          this.entryFromId = data.entryFromId || '';
 
-          // 处理报名表数据
-          this.processEntryFromData(data.entryFromData);
+          // 处理报名表数据 - 传入本地存储数据以便回填
+          await this.processEntryFromData(data.entryFromData);
 
           // 重置刷新标志
           this.hasRefreshedAfterCountdown = false;
@@ -336,6 +494,9 @@ export default {
           } else {
             this.isLoading = false;
           }
+
+          // 检查是否需要弹出报名表和登录提示
+          this.checkShowRegistrationAndLogin();
         }
       } catch (error) {
         this.isLoading = false;
@@ -343,124 +504,396 @@ export default {
       }
     },
 
-    // 处理报名表数据
-    processEntryFromData(entryFromData) {
+    // 检查是否需要显示报名表和登录提示
+    checkShowRegistrationAndLogin() {
+      // 当有报名表内容且未登录时，弹出报名表和登录提示
+      if (this.isEntryFrom === '1' && this.entryFromData && this.entryFromData.length > 0 && !this.userId) {
+        // 先打开报名表弹框
+        this.showRegistrationModal = true;
+
+        // 然后打开登录提示弹框
+        this.$nextTick(() => {
+          this.showLoginModal = true;
+        });
+      }
+    },
+
+    handleBirthdayChange(date, uniqueKey) {
+      if (date) {
+        try {
+          if (typeof date === 'string') {
+            this.registrationData[uniqueKey] = date;
+          } else if (date instanceof Date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            this.registrationData[uniqueKey] = `${year}-${month}-${day}`;
+          } else {
+            this.registrationData[uniqueKey] = String(date);
+          }
+        } catch (error) {
+          console.error('处理日期出错:', error);
+          this.registrationData[uniqueKey] = '';
+        }
+      } else {
+        this.registrationData[uniqueKey] = '';
+      }
+
+      // 只在有值时触发验证
+      if (this.registrationData[uniqueKey]) {
+        this.$nextTick(() => {
+          if (this.$refs.registrationForm && this.$refs.registrationForm.validateField) {
+            this.$refs.registrationForm.validateField(uniqueKey);
+          }
+        });
+      }
+    },
+
+    // 处理报名表数据 - 修改后的版本
+    async processEntryFromData(entryFromData) {
       if (!entryFromData || !Array.isArray(entryFromData)) {
         this.entryFromData = [];
         this.registrationData = {};
         this.registrationRules = {};
+        this.formInitialized = false;
         return;
       }
 
-      this.entryFromData = entryFromData;
-      this.registrationData = {};
+      // 先保存原始数据，用于初始化验证规则
+      this.entryFromData = [];
       this.registrationRules = {};
-      // 初始化表单数据和验证规则
-      entryFromData.forEach(field => {
-        // 初始化字段数据
-        this.registrationData[field.type] = '';
+      this.formInitialized = false;
+
+      // 统计每种type出现的次数
+      const typeCount = {};
+      const fieldKeys = [];
+
+      // 第一步：初始化表单数据，但不重置registrationData
+
+      // 重新构建entryFromData
+      entryFromData.forEach((field, index) => {
+        if (!typeCount[field.type]) {
+          typeCount[field.type] = 0;
+        }
+        typeCount[field.type]++;
+
+        let fieldKey;
+        if (typeCount[field.type] === 1) {
+          fieldKey = field.type;
+        } else {
+          fieldKey = `${field.type}${typeCount[field.type]}`;
+        }
+
+        const uniqueKey = `${field.type}_${index}`;
+        fieldKeys.push({ fieldKey, uniqueKey });
+
+        const fieldWithKey = {
+          ...field,
+          uniqueKey,
+          fieldKey
+        };
+
+        this.entryFromData.push(fieldWithKey);
 
         // 初始化验证规则
-        this.registrationRules[field.type] = [];
+        this.$set(this.registrationRules, uniqueKey, []);
 
-        // 只对必填字段添加必填验证
+        // 必填验证
         if (field.required) {
-          this.registrationRules[field.type].push({
+          this.registrationRules[uniqueKey].push({
             required: true,
             message: `${field.name}不能为空`,
-            trigger: field.type === 'gender' ? 'change' : 'blur'
+            trigger: []
           });
         }
 
-        // 根据字段类型添加格式验证（无论是否必填，只要填写了就验证格式）
+        // 格式验证
         if (field.type === 'phone') {
-          this.registrationRules[field.type].push({
+          this.registrationRules[uniqueKey].push({
             validator: (rule, value, callback) => {
               if (!value) {
-                // 如果非必填且为空，直接通过
                 if (!field.required) {
                   callback();
                 } else {
-                  // 必填字段已经在上面验证了，这里不再处理
-                  callback();
+                  callback(new Error(`${field.name}不能为空`));
                 }
+                return;
+              }
+
+              const phonePattern = /^1[3-9]\d{9}$/;
+              if (!phonePattern.test(value)) {
+                callback(new Error('请输入正确的手机号码'));
               } else {
-                // 如果有值，验证格式
-                const phonePattern = /^1[3-9]\d{9}$/;
-                if (!phonePattern.test(value)) {
-                  callback(new Error('请输入正确的手机号码'));
-                } else {
-                  callback();
-                }
+                callback();
               }
             },
-            trigger: 'blur'
+            trigger: []
           });
         } else if (field.type === 'idCard') {
-          this.registrationRules[field.type].push({
+          this.registrationRules[uniqueKey].push({
             validator: (rule, value, callback) => {
               if (!value) {
                 if (!field.required) {
                   callback();
                 } else {
-                  callback();
+                  callback(new Error(`${field.name}不能为空`));
                 }
+                return;
+              }
+
+              const idCardPattern = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/;
+              if (!idCardPattern.test(value)) {
+                callback(new Error('请输入正确的身份证号'));
               } else {
-                const idCardPattern = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/;
-                if (!idCardPattern.test(value)) {
-                  callback(new Error('请输入正确的身份证号'));
-                } else {
-                  callback();
-                }
+                callback();
               }
             },
-            trigger: 'blur'
+            trigger: []
           });
         } else if (field.type === 'email') {
-          this.registrationRules[field.type].push({
+          this.registrationRules[uniqueKey].push({
             validator: (rule, value, callback) => {
               if (!value) {
                 if (!field.required) {
                   callback();
                 } else {
-                  callback();
+                  callback(new Error(`${field.name}不能为空`));
                 }
+                return;
+              }
+
+              const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!emailPattern.test(value)) {
+                callback(new Error('请输入正确的邮箱地址'));
               } else {
-                const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailPattern.test(value)) {
-                  callback(new Error('请输入正确的邮箱地址'));
-                } else {
-                  callback();
-                }
+                callback();
               }
             },
-            trigger: 'blur'
+            trigger: []
           });
         } else if (field.type === 'age') {
-          this.registrationRules[field.type].push({
+          this.registrationRules[uniqueKey].push({
             validator: (rule, value, callback) => {
               if (!value) {
                 if (!field.required) {
                   callback();
                 } else {
-                  callback();
+                  callback(new Error(`${field.name}不能为空`));
                 }
+                return;
+              }
+
+              const age = parseInt(value);
+              if (isNaN(age) || age < 0 || age > 150) {
+                callback(new Error('请输入有效的年龄(0-150)'));
               } else {
-                const age = parseInt(value);
-                if (isNaN(age) || age < 0 || age > 150) {
-                  callback(new Error('请输入有效的年龄(0-150)'));
-                } else {
-                  callback();
-                }
+                callback();
               }
             },
-            trigger: 'blur'
+            trigger: []
           });
         }
       });
-      
+
+      // 第二步：检查本地存储并填充数据
+      await this.fillFormDataFromLocalStorage(fieldKeys);
+
+      // 标记表单已初始化完成
+      this.formInitialized = true;
     },
-    
+
+    // 从本地存储填充表单数据
+    async fillFormDataFromLocalStorage(fieldKeys) {
+      try {
+        const storageKey = `registration_${this.id}`;
+        const localData = localStorage.getItem(storageKey);
+
+        if (localData) {
+          const parsedData = JSON.parse(localData);
+          console.log('从本地存储加载的数据:', parsedData);
+
+          // 关键：从本地存储设置组件的状态
+          if (parsedData.registrationId) {
+            this.registrationId = parsedData.registrationId;
+            this.isRegistered = true;
+            console.log('从本地存储设置 registrationId:', this.registrationId);
+          }
+
+          if (parsedData.entryFromId) {
+            this.entryFromId = parsedData.entryFromId;
+            console.log('从本地存储设置 entryFromId:', this.entryFromId);
+          }
+
+          // 从本地存储的数据中获取回显内容
+          const registrationData = parsedData.registrationData || {};
+
+          // 填充表单数据
+          fieldKeys.forEach(({ fieldKey, uniqueKey }) => {
+            let value = '';
+
+            // 尝试从不同位置获取数据
+            if (registrationData[fieldKey] !== undefined) {
+              value = registrationData[fieldKey];
+            } else if (registrationData[fieldKey.replace(/\d+$/, '')] !== undefined) {
+              // 尝试匹配去掉数字后缀的key
+              const baseKey = fieldKey.replace(/\d+$/, '');
+              if (registrationData[baseKey] !== undefined) {
+                value = registrationData[baseKey];
+              }
+            }
+
+            if (value !== '') {
+              this.$set(this.registrationData, uniqueKey, value);
+            }
+          });
+
+          console.log('表单数据已从本地存储填充:', this.registrationData);
+          return;
+        }
+
+        // 本地没有存储
+        console.log('本地没有存储数据');
+        this.isRegistered = false;
+        this.registrationId = null;
+
+        // 初始化空值
+        fieldKeys.forEach(({ uniqueKey }) => {
+          if (!this.registrationData[uniqueKey]) {
+            this.$set(this.registrationData, uniqueKey, '');
+          }
+        });
+
+      } catch (error) {
+        console.error('从本地存储填充表单数据失败:', error);
+        // 出错时初始化空值
+        fieldKeys.forEach(({ uniqueKey }) => {
+          this.$set(this.registrationData, uniqueKey, '');
+        });
+      }
+    },
+
+    // 打开报名表单弹框
+    async openRegistrationModal() {
+      this.showRegistrationModal = true;
+
+      // 如果用户未登录，则弹出登录提示
+      if (!this.userId) {
+        this.$nextTick(() => {
+          this.showLoginModal = true;
+        });
+        return;
+      }
+
+      // 已登录，检查本地是否有报名信息
+      await this.checkLocalRegistration();
+
+      // 同时检查服务器上的报名状态（用于同步）
+      await this.checkRegistrationStatus();
+
+      // 延迟重置验证状态
+      this.$nextTick(() => {
+        if (this.$refs.registrationForm) {
+          setTimeout(() => {
+            if (this.$refs.registrationForm) {
+              this.$refs.registrationForm.resetFields();
+              this.clearFormValidation();
+            }
+          }, 100);
+        }
+      });
+    },
+
+    // 检查本地报名信息
+    async checkLocalRegistration() {
+      try {
+        // 构建本地存储的键
+        const storageKey = `registration_${this.id}`;
+        const localData = localStorage.getItem(storageKey);
+
+        if (localData) {
+          const parsedData = JSON.parse(localData);
+          console.log('从本地存储检查报名信息:', parsedData);
+
+          // 关键：只要有 registrationId 就认为是已报名
+          if (parsedData.registrationId) {
+            this.registrationId = parsedData.registrationId;
+            this.isRegistered = true;
+
+            if (parsedData.entryFromId) {
+              this.entryFromId = parsedData.entryFromId;
+            }
+
+            console.log('检查本地报名信息: 已报名，registrationId:', this.registrationId);
+
+            // 确保表单数据已经填充
+            const registrationData = parsedData.registrationData || {};
+
+            this.entryFromData.forEach(field => {
+              const value = registrationData[field.fieldKey] !== undefined
+                ? registrationData[field.fieldKey]
+                : '';
+
+              this.$set(this.registrationData, field.uniqueKey, value);
+            });
+
+            return;
+          }
+        }
+
+        this.isRegistered = false;
+        this.registrationId = null;
+
+      } catch (error) {
+        console.error('检查本地报名信息失败:', error);
+        this.isRegistered = false;
+        this.registrationId = null;
+      }
+    },
+
+    // 检查服务器报名状态
+    async checkRegistrationStatus() {
+      if (!this.userId) {
+        return;
+      }
+
+      try {
+        // 查询用户是否已在服务器报名
+        const res = await this.$api.getId({
+          liveId: this.id
+        });
+
+        if (res.code === 200 && res.data && res.data.length > 0) {
+          const registrationRecord = res.data[0];
+          this.isRegistered = true;
+          this.registrationId = registrationRecord.id;
+
+          // 处理服务器返回的数据
+          await this.processServerJsonData(registrationRecord);
+        } else {
+          if (!this.isRegistered) {
+            this.isRegistered = false;
+            this.registrationId = null;
+          }
+        }
+      } catch (error) {
+        console.error('检查服务器报名状态失败:', error);
+      }
+    },
+
+    // 登录弹框取消按钮处理
+    handleLoginCancel() {
+      this.showLoginModal = false;
+    },
+
+    // 登录弹框确认按钮处理
+    handleLoginConfirm() {
+      if (this.isWechatBrowser()) {
+        this.wechatAuth();
+      } else {
+        window.location.href = '/login?redirect=' + encodeURIComponent(window.location.href);
+      }
+    },
+
     // 解析流数据
     async parseStreamData(data) {
       console.log('开始解析流数据，指定格式:', this.streamType);
@@ -792,13 +1225,11 @@ export default {
 
     // 倒计时相关方法
     startCountdown() {
-      // 若startTime仍为空，直接返回（兜底处理）
       if (!this.startTime) {
         console.warn('开始时间为空，无法启动倒计时');
         return;
       }
 
-      // 清除原有定时器，防止重复创建
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
         this.countdownTimer = null;
@@ -825,15 +1256,12 @@ export default {
             return;
           }
 
-          // 如果已经过了开始时间
           if (now >= start) {
             console.log('开始时间已到达，停止倒计时');
             this.clearCountdown();
 
-            // 只在第一次到达时刷新状态
             if (!this.hasRefreshedAfterCountdown) {
               this.hasRefreshedAfterCountdown = true;
-              // 延迟500ms后刷新状态，避免频繁调用
               setTimeout(() => {
                 this.refreshLiveStatus();
               }, 500);
@@ -841,7 +1269,6 @@ export default {
             return;
           }
 
-          // 计算并更新倒计时
           const diff = start.getTime() - now.getTime();
           const days = Math.floor(diff / (1000 * 60 * 60 * 24));
           const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -861,12 +1288,8 @@ export default {
         }
       };
 
-      // 初始化刷新标志
       this.hasRefreshedAfterCountdown = false;
-
-      // 立即执行一次，避免延迟
       updateCountdown();
-      // 每秒更新一次
       this.countdownTimer = setInterval(updateCountdown, 1000);
     },
 
@@ -887,7 +1310,6 @@ export default {
     async refreshLiveStatus() {
       if (!this.id) return;
 
-      // 防止短时间内多次刷新
       if (this.isRefreshing) {
         console.log('正在刷新中，跳过此次请求');
         return;
@@ -897,7 +1319,6 @@ export default {
         console.log('刷新直播状态...');
         this.isRefreshing = true;
 
-        // 调用接口获取最新状态
         const res = await this.$api.getById({ id: this.id });
 
         if (res.code === 200) {
@@ -905,28 +1326,24 @@ export default {
           const oldStatus = this.liveStatus;
           const newStatus = data.liveStatus;
 
-          // 更新数据
           this.liveShowName = data.liveShowName;
           this.startTime = data.startTime;
           this.liveStatus = newStatus;
 
           // 更新报名表数据
-          this.processEntryFromData(data.entryFromData);
+          await this.processEntryFromData(data.entryFromData);
 
           if (data.liveCover) {
             this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`;
           }
 
-          // 只有在状态发生变化时才重新启动倒计时
           if (oldStatus !== newStatus) {
             console.log(`直播状态变化: ${oldStatus} -> ${newStatus}`);
 
-            // 如果变成直播中，初始化播放器
             if (newStatus === '1') {
               await this.parseStreamData(data);
             }
 
-            // 重新启动倒计时（如果是未开始状态）
             if (newStatus === '0') {
               this.startCountdown();
             } else {
@@ -935,7 +1352,6 @@ export default {
           } else {
             console.log('直播状态未变化，保持当前状态');
 
-            // 如果状态仍然是未开始，且没有倒计时，重新启动倒计时
             if (newStatus === '0' && !this.countdownTimer) {
               this.startCountdown();
             }
@@ -944,9 +1360,7 @@ export default {
       } catch (error) {
         console.error('刷新直播状态失败:', error);
 
-        // 如果刷新失败，但直播状态是未开始，仍然尝试重新启动倒计时
         if (this.liveStatus === '0') {
-          // 延迟重试
           setTimeout(() => {
             if (!this.countdownTimer) {
               this.startCountdown();
@@ -1006,75 +1420,247 @@ export default {
       }
 
       console.log('提交评论:', this.commentText);
-      // 这里可以调用API提交评论
       this.$Message.success('评论已发送');
       this.commentText = '';
     },
 
     // 提交报名表单
-    submitRegistration() {
-      this.$refs.registrationForm.validate((valid) => {
+    async submitRegistration() {
+      this.$refs.registrationForm.validate(async (valid) => {
         if (valid) {
           this.registrationLoading = true;
 
-          // 准备提交的数据
-          const submitData = {
-            liveId: this.id,
-            fields: []
-          };
-
-          // 根据 entryFromData 构建提交数据
-          this.entryFromData.forEach(field => {
-            submitData.fields.push({
-              type: field.type,
-              name: field.name,
-              value: this.registrationData[field.type] || ''
+          try {
+            // 构建registrationData对象
+            const registrationData = {};
+            this.entryFromData.forEach(field => {
+              const value = this.registrationData[field.uniqueKey];
+              if (value !== undefined && value !== null && value !== '') {
+                registrationData[field.fieldKey] = value;
+              }
             });
-          });
 
-          console.log('提交报名信息:', submitData);
+            // 准备提交的数据
+            const submitData = {
+              liveStreamId: this.id,
+              entryFromId: this.entryFromId,
+              registrationData: registrationData
+            };
 
-          // 调用API提交报名信息
-          this.$api.submitRegistration(submitData)
-            .then(res => {
+            console.log('提交信息', submitData);
+
+            let res;
+
+            // 关键修改：判断是否已报名的逻辑
+            // 只要有 registrationId 就认为是已报名，不管 isRegistered 是什么
+            if (this.registrationId) {
+              // 修改报名信息
+              console.log('执行修改操作，registrationId:', this.registrationId);
+
+              const updateData = {
+                id: this.registrationId,
+                liveStreamId: this.id,
+                entryFromId: this.entryFromId,
+                registrationData: registrationData
+              };
+
+              console.log('修改报名信息，参数:', updateData);
+
+              res = await this.$api.userRegistrationData.update(updateData);
+
+              if (res.code === 200) {
+                this.$Message.success('报名信息修改成功！');
+
+                // 处理服务器返回的数据
+                await this.processAndSaveRegistrationResponse(res.data);
+
+                this.showRegistrationModal = false;
+              } else {
+                this.$Message.error(res.message || '修改失败');
+              }
+            } else {
+              // 新增报名信息
+              console.log('执行新增操作');
+
+              res = await this.$api.add(submitData);
+
               if (res.code === 200) {
                 this.$Message.success('报名信息提交成功！');
-                this.registrationLoading = false;
+                this.isRegistered = true;
+
+                // 处理服务器返回的数据
+                await this.processAndSaveRegistrationResponse(res.data);
+
                 this.showRegistrationModal = false;
-                this.resetRegistrationForm();
               } else {
                 this.$Message.error(res.message || '提交失败');
-                this.registrationLoading = false;
               }
-            })
-            .catch(err => {
-              console.error('提交报名信息失败:', err);
-              this.$Message.error('提交失败，请重试');
-              this.registrationLoading = false;
-            });
+            }
+
+          } catch (error) {
+            console.error('提交报名信息失败:', error);
+            this.$Message.error('提交失败，请重试');
+          } finally {
+            this.registrationLoading = false;
+          }
         } else {
           this.$Message.error('请填写完整的报名信息');
         }
       });
     },
 
+    // 处理服务器返回的报名数据
+    async processAndSaveRegistrationResponse(serverData) {
+      try {
+        console.log('处理服务器返回的数据:', serverData);
+
+        // 确保 serverData 是响应中的 data 字段
+        if (serverData?.data) {
+          serverData = serverData.data;
+          console.log('提取 data 字段:', serverData);
+        }
+
+        // 解析jsonData
+        let parsedData = {};
+        if (serverData?.jsonData) {
+          try {
+            parsedData = JSON.parse(serverData.jsonData);
+            console.log('成功解析 jsonData:', parsedData);
+          } catch (e) {
+            console.error('解析jsonData失败:', e);
+            // 使用我们提交的数据
+            this.entryFromData.forEach(field => {
+              const value = this.registrationData[field.uniqueKey];
+              if (value !== undefined && value !== null && value !== '') {
+                parsedData[field.fieldKey] = value;
+              }
+            });
+          }
+        } else {
+          console.warn('服务器返回的数据没有 jsonData 字段');
+          // 使用当前表单数据
+          this.entryFromData.forEach(field => {
+            const value = this.registrationData[field.uniqueKey];
+            if (value !== undefined && value !== null && value !== '') {
+              parsedData[field.fieldKey] = value;
+            }
+          });
+        }
+
+        // 更新组件的状态
+        if (serverData?.id) {
+          this.registrationId = serverData.id;
+          this.isRegistered = true;
+          console.log('更新组件状态 registrationId:', this.registrationId);
+        }
+
+        if (serverData?.entryFromId) {
+          this.entryFromId = serverData.entryFromId;
+          console.log('更新组件状态 entryFromId:', this.entryFromId);
+        }
+
+        // 保存到本地存储
+        await this.saveRegistrationToLocal({
+          registrationId: this.registrationId,
+          registrationData: parsedData,
+          serverData: serverData
+        });
+
+        console.log('报名数据已保存到本地存储');
+
+      } catch (error) {
+        console.error('处理服务器返回数据失败:', error);
+        // 即使处理失败，也尝试保存基本数据
+        await this.saveRegistrationToLocal({
+          registrationId: serverData?.id || null,
+          registrationData: {}
+        });
+      }
+    },
+
+    async saveRegistrationToLocal(data) {
+      try {
+        const storageKey = `registration_${this.id}`;
+
+        console.log('开始保存到本地存储，参数data:', data);
+
+        const storageData = {
+          registrationId: data.registrationId || null,
+          registrationData: data.registrationData || {},
+          serverData: data.serverData || null,
+          liveStreamId: this.id,
+          entryFromId: this.entryFromId, // 使用当前组件的 entryFromId
+          saveTime: new Date().getTime(),
+          userId: this.userId,
+          version: '1.0.0'
+        };
+
+        localStorage.setItem(storageKey, JSON.stringify(storageData));
+        console.log('报名信息已正确保存到本地存储', storageData);
+
+      } catch (error) {
+        console.error('保存到本地存储失败:', error);
+      }
+    },
+
     // 取消报名
     cancelRegistration() {
       this.showRegistrationModal = false;
-      this.resetRegistrationForm();
     },
 
     // 重置报名表单
     resetRegistrationForm() {
-      // 清空所有表单字段
-      Object.keys(this.registrationData).forEach(key => {
-        this.registrationData[key] = '';
+      this.registrationData = {};
+      this.entryFromData.forEach(field => {
+        this.$set(this.registrationData, field.uniqueKey, '');
       });
 
       if (this.$refs.registrationForm) {
-        this.$refs.registrationForm.resetFields();
+        this.$nextTick(() => {
+          if (this.$refs.registrationForm) {
+            this.$refs.registrationForm.resetFields();
+          }
+        });
       }
-    }
+    },
+
+    // 清除表单验证状态
+    clearFormValidation() {
+      if (this.$refs.registrationForm) {
+        this.$refs.registrationForm.clearValidate();
+
+        this.entryFromData.forEach(field => {
+          const uniqueKey = field.uniqueKey;
+          if (this.$refs.registrationForm.fields) {
+            const formItem = this.$refs.registrationForm.fields.find(f => f.prop === uniqueKey);
+            if (formItem) {
+              formItem.validateState = '';
+              formItem.validateMessage = '';
+            }
+          }
+        });
+      }
+    },
+
+    // 清理过期的本地报名数据
+    cleanupExpiredLocalRegistrations() {
+      const oneWeekAgo = new Date().getTime() - (7 * 24 * 60 * 60 * 1000);
+
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.startsWith('registration_')) {
+          try {
+            const data = JSON.parse(localStorage.getItem(key));
+            if (data.saveTime && data.saveTime < oneWeekAgo) {
+              localStorage.removeItem(key);
+            }
+          } catch (e) {
+            localStorage.removeItem(key);
+          }
+        }
+      }
+    },
+
   }
 };
 </script>
@@ -1530,8 +2116,8 @@ body {
   right: 30px;
   background: linear-gradient(135deg, #1890ff, #40a9ff);
   color: white;
-  width: 60px;
-  height: 60px;
+  width: 55px;
+  height: 55px;
   border-radius: 50%;
   display: flex;
   flex-direction: column;
@@ -1550,7 +2136,6 @@ body {
 
 .fab-icon {
   font-size: 24px;
-  margin-bottom: 4px;
 }
 
 .fab-text {
@@ -1588,16 +2173,108 @@ body {
   margin: 0 auto;
 }
 
+::v-deep .registration-modal .ivu-modal-content {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
 ::v-deep .registration-modal .ivu-modal-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-::v-deep .registration-modal .ivu-modal-content {
-  max-height: 80vh;
-  overflow-y: auto;
+/* 登录提示弹框样式 */
+::v-deep .login-modal {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
+
+::v-deep .login-modal .ivu-modal {
+  top: 0;
+  margin: 0 auto;
+}
+
+::v-deep .login-modal .ivu-modal-content {
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+::v-deep .login-modal .ivu-modal-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1002 !important;
+}
+
+.login-modal-content {
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.login-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+}
+
+.login-body {
+  text-align: center;
+}
+
+.login-icon {
+  width: 100%;
+  font-size: 50px;
+  margin-bottom: 15px;
+}
+
+.login-message {
+  font-size: 16px;
+  color: #666;
+}
+
+.login-footer {
+  display: flex;
+  justify-content: center;
+  gap: 20px;
+}
+
+.login-cancel-btn {
+  padding: 10px 30px;
+  font-size: 14px;
+  color: #666;
+  border: 1px solid #d9d9d9;
+  background: #fff;
+}
+
+.login-confirm-btn {
+  padding: 10px 30px;
+  font-size: 14px;
+  background: #1890ff;
+  border-color: #1890ff;
+  color: #fff;
+}
+
+.login-cancel-btn:hover {
+  color: #333;
+  background: #f5f5f5;
+  border-color: #d9d9d9;
+}
+
+.login-confirm-btn:hover {
+  background: #40a9ff;
+  border-color: #40a9ff;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
   .live-container {
@@ -1676,6 +2353,21 @@ body {
     width: 90% !important;
     margin: 0 auto;
   }
+
+  ::v-deep .login-modal .ivu-modal {
+    width: 80% !important;
+    margin: 0 auto;
+  }
+
+  .login-footer {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .login-cancel-btn,
+  .login-confirm-btn {
+    width: 100%;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1696,8 +2388,143 @@ body {
   .registration-fab {
     bottom: 15px;
     right: 15px;
-    width: 45px;
-    height: 45px;
+    width: 55px;
+    height: 55px;
+  }
+}
+
+.registration-modal-content {
+  display: flex;
+  flex-direction: column;
+  height: 500px;
+  /* 设置固定高度 */
+  max-height: 70vh;
+  /* 最大高度为视口的70% */
+}
+
+.modal-header-section {
+  flex-shrink: 0;
+  /* 防止标题区域被压缩 */
+  padding-bottom: 15px;
+  border-bottom: 1px solid #f0f0f0;
+  margin-bottom: 15px;
+}
+
+.registration-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #646464;
+}
+
+.modal-form-section {
+  flex: 1;
+  /* 占据剩余空间 */
+  overflow-y: auto;
+  /* 允许垂直滚动 */
+  padding-right: 8px;
+  /* 为滚动条留出空间 */
+  margin-bottom: 15px;
+}
+
+/* 自定义滚动条样式 */
+.modal-form-section::-webkit-scrollbar {
+  width: 6px;
+}
+
+.modal-form-section::-webkit-scrollbar-track {
+  background: #f5f5f5;
+  border-radius: 3px;
+}
+
+.modal-form-section::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+.modal-form-section::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.modal-footer-section {
+  flex-shrink: 0;
+  /* 防止底部区域被压缩 */
+  padding-top: 15px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* 移除原有的弹框内边距设置 */
+::v-deep .registration-modal .ivu-modal-content {
+  padding: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+::v-deep .registration-modal .ivu-modal-body {
+  /* padding: 24px; */
+  height: 100%;
+}
+
+::v-deep .registration-modal .ivu-form-item-label {
+  font-weight: 500;
+  color: #333;
+  font-size: 13px;
+}
+
+/* 调整输入框样式 */
+::v-deep .registration-modal .ivu-input,
+::v-deep .registration-modal .ivu-select-selection,
+::v-deep .registration-modal .ivu-date-picker {
+  border-radius: 4px;
+  border: 1px solid #dcdee2;
+}
+
+::v-deep .registration-modal .ivu-input:hover,
+::v-deep .registration-modal .ivu-select-selection:hover,
+::v-deep .registration-modal .ivu-date-picker:hover {
+  border-color: #57a3f3;
+}
+
+::v-deep .registration-modal .ivu-input:focus,
+::v-deep .registration-modal .ivu-select-focused .ivu-select-selection {
+  border-color: #2d8cf0;
+  box-shadow: 0 0 0 2px rgba(45, 140, 240, 0.2);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .registration-modal-content {
+    height: 450px;
+    max-height: 60vh;
+  }
+
+  ::v-deep .registration-modal .ivu-modal-body {
+    padding: 16px;
+  }
+
+  .modal-header-section {
+    padding-bottom: 12px;
+    margin-bottom: 12px;
+  }
+
+  .modal-footer-section {
+    padding-top: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .registration-modal-content {
+    height: 400px;
+    max-height: 55vh;
+  }
+
+  ::v-deep .registration-modal .ivu-modal-body {
+    padding: 12px;
   }
 }
 </style>
