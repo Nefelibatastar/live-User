@@ -427,8 +427,7 @@ export default {
         // 保存到本地存储
         await this.saveRegistrationToLocal({
           registrationId: serverData.id,
-          registrationData: parsedData,
-          serverData: serverData
+          registrationData: parsedData
         });
 
       } catch (error) {
@@ -549,7 +548,7 @@ export default {
       }
     },
 
-    // 处理报名表数据 - 修改后的版本
+    // 处理报名表数据
     async processEntryFromData(entryFromData) {
       if (!entryFromData || !Array.isArray(entryFromData)) {
         this.entryFromData = [];
@@ -703,80 +702,125 @@ export default {
     },
 
     // 从本地存储填充表单数据
-    async fillFormDataFromLocalStorage(fieldKeys) {
+    async fillFormDataFromLocalStorage() {
       try {
         const storageKey = `registration_${this.id}`;
         const localData = localStorage.getItem(storageKey);
 
-        if (localData) {
-          const parsedData = JSON.parse(localData);
-          console.log('从本地存储加载的数据:', parsedData);
-
-          // 关键：从本地存储设置组件的状态
-          if (parsedData.registrationId) {
-            this.registrationId = parsedData.registrationId;
-            this.isRegistered = true;
-            console.log('从本地存储设置 registrationId:', this.registrationId);
-          }
-
-          if (parsedData.entryFromId) {
-            this.entryFromId = parsedData.entryFromId;
-            console.log('从本地存储设置 entryFromId:', this.entryFromId);
-          }
-
-          // 从本地存储的数据中获取回显内容
-          const registrationData = parsedData.registrationData || {};
-
-          // 填充表单数据
-          fieldKeys.forEach(({ fieldKey, uniqueKey }) => {
-            let value = '';
-
-            // 尝试从不同位置获取数据
-            if (registrationData[fieldKey] !== undefined) {
-              value = registrationData[fieldKey];
-            } else if (registrationData[fieldKey.replace(/\d+$/, '')] !== undefined) {
-              // 尝试匹配去掉数字后缀的key
-              const baseKey = fieldKey.replace(/\d+$/, '');
-              if (registrationData[baseKey] !== undefined) {
-                value = registrationData[baseKey];
-              }
-            }
-
-            if (value !== '') {
-              this.$set(this.registrationData, uniqueKey, value);
-            }
-          });
-
-          console.log('表单数据已从本地存储填充:', this.registrationData);
+        if (!localData) {
+          this.initEmptyForm();
           return;
         }
 
-        // 本地没有存储
-        console.log('本地没有存储数据');
-        this.isRegistered = false;
-        this.registrationId = null;
+        const parsedData = JSON.parse(localData);
+        console.log('读取本地存储:', parsedData);
 
-        // 初始化空值
-        fieldKeys.forEach(({ uniqueKey }) => {
-          if (!this.registrationData[uniqueKey]) {
-            this.$set(this.registrationData, uniqueKey, '');
-          }
-        });
+        // 读取基本信息
+        this.registrationId = parsedData.registrationId || null;
+        this.isRegistered = !!this.registrationId;
+        this.entryFromId = parsedData.entryFromId || this.entryFromId;
+
+        // 获取存储的数据
+        const storedData = parsedData.registrationData || {};
+
+        // 清空当前表单
+        this.registrationData = {};
+
+        // 根据不同的存储格式进行处理
+        if (parsedData.format === 'dynamic_chinese' && parsedData.formConfigSnapshot) {
+          // 使用快照配置回填
+          this.fillWithConfigSnapshot(parsedData.formConfigSnapshot, storedData);
+        } else {
+          // 使用当前表单配置回填
+          this.fillWithCurrentConfig(storedData);
+        }
 
       } catch (error) {
-        console.error('从本地存储填充表单数据失败:', error);
-        // 出错时初始化空值
-        fieldKeys.forEach(({ uniqueKey }) => {
-          this.$set(this.registrationData, uniqueKey, '');
-        });
+        console.error('填充失败:', error);
+        this.initEmptyForm();
       }
+    },
+
+    // 使用快照配置回填
+    fillWithConfigSnapshot(formConfigSnapshot, storedData) {
+      formConfigSnapshot.forEach(snapshot => {
+        const currentField = this.entryFromData.find(f =>
+          f.uniqueKey === snapshot.uniqueKey ||
+          (f.name === snapshot.name && f.type === snapshot.type)
+        );
+
+        if (currentField && storedData[snapshot.name] !== undefined) {
+          const value = this.transformValueForForm(currentField.type, storedData[snapshot.name]);
+          this.$set(this.registrationData, currentField.uniqueKey, value);
+        }
+      });
+    },
+
+    // 使用当前配置回填
+    fillWithCurrentConfig(storedData) {
+      this.entryFromData.forEach(field => {
+        if (!field.name) return;
+
+        let value = '';
+
+        // 1. 直接匹配字段名
+        if (storedData[field.name] !== undefined) {
+          value = storedData[field.name];
+        }
+        // 2. 尝试模糊匹配
+        else {
+          const matchingKey = Object.keys(storedData).find(key =>
+            key.includes(field.name) ||
+            (field.name && field.name.includes(key))
+          );
+
+          if (matchingKey) {
+            value = storedData[matchingKey];
+          }
+        }
+
+        // 转换值以适应表单
+        value = this.transformValueForForm(field.type, value);
+
+        if (value !== undefined && value !== null && value !== '') {
+          this.$set(this.registrationData, field.uniqueKey, value);
+        }
+      });
+    },
+
+    // 为表单转换值
+    transformValueForForm(fieldType, value) {
+      if (value === undefined || value === null || value === '') return value;
+
+      if (fieldType === 'gender') {
+        if (value === '男') return 'male';
+        if (value === '女') return 'female';
+        return value;
+      }
+
+      return value;
+    },
+
+    // 初始化空表单
+    initEmptyForm() {
+      this.registrationData = {};
+      this.entryFromData.forEach(field => {
+        this.$set(this.registrationData, field.uniqueKey, '');
+      });
     },
 
     // 打开报名表单弹框
     async openRegistrationModal() {
       this.showRegistrationModal = true;
 
-      // 如果用户未登录，则弹出登录提示
+      console.log('打开报名弹框，当前状态:', {
+        userId: this.userId,
+        entryFromId: this.entryFromId, // 这个是组件的 entryFromId
+        isRegistered: this.isRegistered,
+        registrationId: this.registrationId
+      });
+
+      // 如果用户未登录，弹出登录提示
       if (!this.userId) {
         this.$nextTick(() => {
           this.showLoginModal = true;
@@ -823,19 +867,48 @@ export default {
               this.entryFromId = parsedData.entryFromId;
             }
 
-            console.log('检查本地报名信息: 已报名，registrationId:', this.registrationId);
+            console.log('检查本地报名信息: 已报名，registrationId:', this.registrationId, 'entryFromId:', this.entryFromId);
 
             // 确保表单数据已经填充
             const registrationData = parsedData.registrationData || {};
 
-            this.entryFromData.forEach(field => {
-              const value = registrationData[field.fieldKey] !== undefined
-                ? registrationData[field.fieldKey]
-                : '';
+            console.log('本地存储的中文数据:', registrationData);
+            console.log('entryFromData配置:', this.entryFromData);
 
-              this.$set(this.registrationData, field.uniqueKey, value);
+            // 使用字段的name属性进行匹配
+            this.entryFromData.forEach(field => {
+              if (!field.name) return;
+
+              let value = '';
+
+              // 直接使用字段的name作为键来查找
+              if (registrationData[field.name] !== undefined) {
+                value = registrationData[field.name];
+              } else {
+                // 尝试其他匹配方式
+                for (const [chineseKey, chineseValue] of Object.entries(registrationData)) {
+                  // 简单的模糊匹配
+                  if (field.name.includes(chineseKey) || chineseKey.includes(field.name)) {
+                    value = chineseValue;
+                    break;
+                  }
+                }
+              }
+
+              // 性别字段值转换
+              if (field.type === 'gender' && value) {
+                if (value === '男') value = 'male';
+                else if (value === '女') value = 'female';
+              }
+
+              console.log(`为字段 ${field.name} (${field.uniqueKey}) 设置值:`, value);
+
+              if (value !== undefined && value !== '' && value !== null) {
+                this.$set(this.registrationData, field.uniqueKey, value);
+              }
             });
 
+            console.log('填充后的registrationData:', this.registrationData);
             return;
           }
         }
@@ -867,9 +940,16 @@ export default {
           this.isRegistered = true;
           this.registrationId = registrationRecord.id;
 
+          // 关键：从服务器数据中获取 entryFromId
+          if (registrationRecord.entryFromId) {
+            this.entryFromId = registrationRecord.entryFromId;
+            console.log('从服务器状态检查更新 entryFromId:', this.entryFromId);
+          }
+
           // 处理服务器返回的数据
           await this.processServerJsonData(registrationRecord);
         } else {
+          // 服务器没有记录，但本地可能有（可能数据不一致）
           if (!this.isRegistered) {
             this.isRegistered = false;
             this.registrationId = null;
@@ -1427,86 +1507,166 @@ export default {
     // 提交报名表单
     async submitRegistration() {
       this.$refs.registrationForm.validate(async (valid) => {
-        if (valid) {
-          this.registrationLoading = true;
-
-          try {
-            // 构建registrationData对象
-            const registrationData = {};
-            this.entryFromData.forEach(field => {
-              const value = this.registrationData[field.uniqueKey];
-              if (value !== undefined && value !== null && value !== '') {
-                registrationData[field.fieldKey] = value;
-              }
-            });
-
-            // 准备提交的数据
-            const submitData = {
-              liveStreamId: this.id,
-              entryFromId: this.entryFromId,
-              registrationData: registrationData
-            };
-
-            console.log('提交信息', submitData);
-
-            let res;
-
-            // 关键修改：判断是否已报名的逻辑
-            // 只要有 registrationId 就认为是已报名，不管 isRegistered 是什么
-            if (this.registrationId) {
-              // 修改报名信息
-              console.log('执行修改操作，registrationId:', this.registrationId);
-
-              const updateData = {
-                id: this.registrationId,
-                liveStreamId: this.id,
-                entryFromId: this.entryFromId,
-                registrationData: registrationData
-              };
-
-              console.log('修改报名信息，参数:', updateData);
-
-              res = await this.$api.userRegistrationData.update(updateData);
-
-              if (res.code === 200) {
-                this.$Message.success('报名信息修改成功！');
-
-                // 处理服务器返回的数据
-                await this.processAndSaveRegistrationResponse(res.data);
-
-                this.showRegistrationModal = false;
-              } else {
-                this.$Message.error(res.message || '修改失败');
-              }
-            } else {
-              // 新增报名信息
-              console.log('执行新增操作');
-
-              res = await this.$api.add(submitData);
-
-              if (res.code === 200) {
-                this.$Message.success('报名信息提交成功！');
-                this.isRegistered = true;
-
-                // 处理服务器返回的数据
-                await this.processAndSaveRegistrationResponse(res.data);
-
-                this.showRegistrationModal = false;
-              } else {
-                this.$Message.error(res.message || '提交失败');
-              }
-            }
-
-          } catch (error) {
-            console.error('提交报名信息失败:', error);
-            this.$Message.error('提交失败，请重试');
-          } finally {
-            this.registrationLoading = false;
-          }
-        } else {
+        if (!valid) {
           this.$Message.error('请填写完整的报名信息');
+          return;
+        }
+
+        // 防止重复提交
+        if (this.registrationLoading) return;
+
+        this.registrationLoading = true;
+
+        try {
+          // 步骤1：准备数据
+          const { chineseData, submitData } = this.prepareSubmissionData();
+
+          // 步骤2：提交到服务器
+          const serverResponse = await this.submitToServer(submitData);
+
+          if (!serverResponse.success) {
+            throw new Error(serverResponse.message || '服务器提交失败');
+          }
+
+          // 步骤3：处理服务器成功响应
+          await this.handleServerSuccess(
+            serverResponse.data,
+            chineseData,
+            serverResponse.isUpdate
+          );
+
+          // 步骤4：关闭弹框
+          this.showRegistrationModal = false;
+
+        } catch (error) {
+          this.handleSubmissionError(error);
+        } finally {
+          this.registrationLoading = false;
         }
       });
+    },
+
+    // 准备提交数据
+    prepareSubmissionData() {
+      const chineseData = {};
+
+      this.entryFromData.forEach(field => {
+        const value = this.registrationData[field.uniqueKey];
+        if (this.hasValue(value) && field.name) {
+          chineseData[field.name] = this.transformValueForStorage(field.type, value);
+        }
+      });
+
+      const submitData = {
+        liveStreamId: this.id,
+        entryFromId: this.entryFromId || undefined, // 如果是空就不传
+        registrationData: chineseData
+      };
+
+      console.log('准备提交的数据:', submitData);
+      return { chineseData, submitData };
+    },
+    transformValueForStorage(fieldType, value) {
+      if (fieldType === 'gender') {
+        if (value === 'male') return '男';
+        if (value === 'female') return '女';
+      }
+      return value;
+    },
+    // 判断是否有值
+    hasValue(value) {
+      return value !== undefined && value !== null && value !== '';
+    },
+
+    // 提交到服务器
+    async submitToServer(submitData) {
+      try {
+        let res;
+        let isUpdate = false;
+
+        if (this.registrationId) {
+          // 修改操作
+          isUpdate = true;
+          console.log('执行修改操作，registrationId:', this.registrationId);
+          res = await this.$api.update({
+            id: this.registrationId,
+            ...submitData
+          });
+        } else {
+          // 新增操作
+          isUpdate = false;
+          console.log('执行新增操作');
+          res = await this.$api.add(submitData);
+        }
+
+        return {
+          success: res.code === 200,
+          data: res.data,
+          message: res.message,
+          isUpdate: isUpdate  // 返回操作类型
+        };
+
+      } catch (error) {
+        console.error('API调用失败:', error);
+        return {
+          success: false,
+          message: '网络错误，请检查网络连接',
+          isUpdate: false
+        };
+      }
+    },
+
+    // 处理服务器成功响应
+    async handleServerSuccess(serverData, chineseData, isUpdate) {
+      // 判断是新增还是修改
+      const wasUpdate = isUpdate !== undefined ? isUpdate : !!this.registrationId;
+
+      // 更新本地状态
+      this.isRegistered = true;
+
+      // 更新 registrationId（新增时需要）
+      if (serverData?.id && !wasUpdate) {
+        this.registrationId = serverData.id;
+        console.log('新增成功，设置 registrationId:', this.registrationId);
+      }
+
+      // 更新 entryFromId（从服务器响应中获取）
+      if (serverData?.entryFromId) {
+        this.entryFromId = serverData.entryFromId;
+        console.log('从服务器响应更新 entryFromId:', this.entryFromId);
+      }
+
+      // 保存到本地存储
+      await this.saveRegistrationToLocal({
+        registrationId: this.registrationId,
+        registrationData: chineseData,
+        entryFromId: serverData.entryFromId, // 使用服务器的 entryFromId
+        serverData: serverData,
+        isUpdate: isUpdate
+      });
+
+      // 显示正确的成功消息
+      const message = wasUpdate ? '修改成功！' : '报名成功！';
+      this.$Message.success(message);
+
+      // 刷新报名状态
+      await this.checkRegistrationStatus();
+    },
+
+    // 处理提交错误
+    handleSubmissionError(error) {
+      console.error('提交过程失败:', error);
+
+      // 根据不同错误类型显示不同提示
+      if (error.message.includes('网络错误')) {
+        this.$Message.error('网络连接失败，请检查网络后重试');
+      } else if (error.message.includes('服务器')) {
+        this.$Message.error(error.message);
+      } else {
+        this.$Message.error('提交失败，请重试');
+      }
+
+      // 不保存到本地存储！
     },
 
     // 处理服务器返回的报名数据
@@ -1563,7 +1723,6 @@ export default {
         await this.saveRegistrationToLocal({
           registrationId: this.registrationId,
           registrationData: parsedData,
-          serverData: serverData
         });
 
         console.log('报名数据已保存到本地存储');
@@ -1582,27 +1741,179 @@ export default {
       try {
         const storageKey = `registration_${this.id}`;
 
-        console.log('开始保存到本地存储，参数data:', data);
+        // 优先使用服务器返回的 entryFromId
+        const finalEntryFromId = data.serverData?.entryFromId ||
+          data.entryFromId ||
+          this.entryFromId;
+
+        // 解析服务器返回的 jsonData
+        let registrationData = data.registrationData;
+        if (data.serverData?.jsonData) {
+          try {
+            registrationData = JSON.parse(data.serverData.jsonData);
+            console.log('使用服务器返回的 jsonData:', registrationData);
+          } catch (e) {
+            console.error('解析服务器 jsonData 失败，使用本地数据:', e);
+          }
+        }
 
         const storageData = {
-          registrationId: data.registrationId || null,
-          registrationData: data.registrationData || {},
-          serverData: data.serverData || null,
+          registrationId: data.registrationId || data.serverData?.id,
+          registrationData: registrationData,
           liveStreamId: this.id,
-          entryFromId: this.entryFromId, // 使用当前组件的 entryFromId
+          entryFromId: finalEntryFromId,
+          serverData: data.serverData,
           saveTime: new Date().getTime(),
           userId: this.userId,
-          version: '1.0.0'
+          format: 'dynamic_chinese',
+          submittedToServer: true,
+          lastSubmitTime: new Date().toISOString(),
+          operationType: data.isUpdate ? 'update' : 'add' // 记录操作类型
         };
 
         localStorage.setItem(storageKey, JSON.stringify(storageData));
-        console.log('报名信息已正确保存到本地存储', storageData);
+        console.log('已保存服务器验证过的数据到本地:', storageData);
 
       } catch (error) {
         console.error('保存到本地存储失败:', error);
       }
     },
+    // 检查本地数据是否与服务器同步
+    async checkLocalDataConsistency() {
+      const storageKey = `registration_${this.id}`;
+      const localData = localStorage.getItem(storageKey);
 
+      if (!localData) return;
+
+      const parsedData = JSON.parse(localData);
+
+      // 如果本地数据标记为未提交到服务器，需要清理
+      if (!parsedData.submittedToServer) {
+        console.warn('发现未成功提交到服务器的本地数据，正在清理...');
+        localStorage.removeItem(storageKey);
+        this.isRegistered = false;
+        this.registrationId = null;
+      }
+    },
+    // 根据表单配置构建中文数据
+    buildChineseDataFromForm(formConfig, inputData) {
+      const chineseData = {};
+      const input = inputData || {};
+
+      // 构建映射表，处理各种可能的键名格式
+      const keyMappings = this.buildKeyMappings(formConfig, input);
+
+      formConfig.forEach(field => {
+        if (!field.name) return;
+
+        let value = '';
+
+        // 尝试从不同格式中获取值
+        // 1. 直接使用字段名（中文）
+        if (input[field.name] !== undefined) {
+          value = input[field.name];
+        }
+        // 2. 使用字段类型 + 索引
+        else if (field.fieldKey && input[field.fieldKey] !== undefined) {
+          value = input[field.fieldKey];
+        }
+        // 3. 使用映射表
+        else if (keyMappings[field.uniqueKey] && input[keyMappings[field.uniqueKey]] !== undefined) {
+          value = input[keyMappings[field.uniqueKey]];
+        }
+        // 4. 使用字段类型（标准字段）
+        else if (this.isStandardField(field.type) && input[field.type] !== undefined) {
+          value = input[field.type];
+        }
+        // 5. 尝试模糊匹配
+        else {
+          const matchedKey = this.findMatchingKey(input, field);
+          if (matchedKey) {
+            value = input[matchedKey];
+          }
+        }
+
+        // 转换特殊字段的值
+        value = this.transformFieldValue(field.type, value);
+
+        if (value !== undefined && value !== null && value !== '') {
+          chineseData[field.name] = value;
+        }
+      });
+
+      return chineseData;
+    },
+    // 构建键名映射表
+    buildKeyMappings(formConfig, inputData) {
+      const mappings = {};
+      const inputKeys = Object.keys(inputData || {});
+
+      formConfig.forEach(field => {
+        // 常见英文键名映射
+        // const possibleEnglishKeys = {
+        //   'name': ['姓名', '名称', '名字'],
+        //   'gender': ['性别', 'gender'],
+        //   'age': ['年龄', 'age'],
+        //   'phone': ['电话', '手机', '联系电话', 'phone'],
+        //   'email': ['邮箱', '电子邮件', 'email'],
+        //   'idCard': ['身份证', '身份证号', '证件号码', 'idCard'],
+        //   'birthday': ['出生年月', '出生日期', '生日', 'birthday']
+        // };
+
+        // 对于自定义字段，考虑可能的键名
+        if (field.type === 'text') {
+          // 尝试匹配输入数据中的键名
+          inputKeys.forEach(inputKey => {
+            if (inputKey.includes(field.name) || (field.name && field.name.includes(inputKey))) {
+              mappings[field.uniqueKey] = inputKey;
+            }
+          });
+        }
+      });
+
+      return mappings;
+    },
+
+    // 判断是否是标准字段
+    isStandardField(fieldType) {
+      const standardFields = ['name', 'gender', 'age', 'phone', 'email', 'idCard', 'birthday'];
+      return standardFields.includes(fieldType);
+    },
+
+    // 查找匹配的键名
+    findMatchingKey(inputData, field) {
+      const inputKeys = Object.keys(inputData || {});
+
+      for (const key of inputKeys) {
+        // 如果键名包含字段名或字段类型
+        if (field.name && key.includes(field.name)) return key;
+        if (field.name && field.name.includes(key)) return key;
+        if (field.type && key.includes(field.type)) return key;
+
+        // 对于自定义字段，尝试匹配数字索引
+        if (field.type === 'text' && field.fieldKey) {
+          const index = field.fieldKey.replace('text', '') || '';
+          if (key.includes(index)) return key;
+        }
+      }
+
+      return null;
+    },
+
+    // 转换字段值
+    transformFieldValue(fieldType, value) {
+      if (value === undefined || value === null) return value;
+
+      if (fieldType === 'gender') {
+        if (value === 'male') return '男';
+        if (value === 'female') return '女';
+        if (value === '男') return '男';
+        if (value === '女') return '女';
+      }
+
+      // 其他类型转换...
+      return value;
+    },
     // 取消报名
     cancelRegistration() {
       this.showRegistrationModal = false;
