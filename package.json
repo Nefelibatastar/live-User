@@ -15,7 +15,8 @@
     "video.js": "^8.23.4",
     "videojs-contrib-hls": "^5.15.0",
     "vue": "^2.6.14",
-    "vue-router": "^2.3.0"
+    "vue-router": "^2.3.0",
+    "vuex": "^3.6.2"
   },
   "devDependencies": {
     "@babel/core": "^7.12.16",

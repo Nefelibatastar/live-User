@@ -1,7 +1,7 @@
 import Vue from 'vue'
 import Router from 'vue-router'
 // 引入你的根组件
-import Index from './components/index.vue'
+import WatchLive  from './views/index.vue'
 // 可选：如果有404页面，取消注释并创建NotFound组件
 // import NotFound from './components/NotFound.vue'
 
@@ -10,9 +10,18 @@ Vue.use(Router)
 
 let routes = [
     {
+        path: '/login',
+        name: 'Login',
+        component: () => import('@/components/login/login.vue'),
+        meta: {
+            title: '登录',
+            requiresAuth: false
+        }
+    },
+    {
         path: '/',
-        component: Index,
-        name: 'Index', // 建议给路由命名，方便跳转
+        component: WatchLive ,
+        name: 'WatchLive', // 建议给路由命名，方便跳转
         hidden: true
     },
     // 可选：启用404路由（需创建NotFound.vue）

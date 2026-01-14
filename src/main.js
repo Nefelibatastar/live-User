@@ -2,9 +2,11 @@ import Vue from 'vue'
 import App from './App.vue'
 import router from './routes'
 import iView from 'iview';
+import store from './store'
 import 'iview/dist/styles/iview.css';  
 
 Vue.use(iView);
+Vue.prototype.$bus = new Vue()
 router.beforeEach((to) => {
   if (to.path == '/') {
     // localStorage.removeItem('userInfo');
@@ -24,5 +26,6 @@ Vue.config.productionTip = false
 
 new Vue({
   router,
+  store,
   render: h => h(App),
 }).$mount('#app')
