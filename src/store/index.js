@@ -140,7 +140,7 @@ export default new Vuex.Store({
       return state.user?.user.id || state.user?.user.userId || '';
     },
     isLoggedIn: state => {
-      const isLogged = !!state.user.user;
+      const isLogged = !!state.user?.user;
       // console.log('Vuex getter isLoggedIn 调用:', isLogged);
       return isLogged;
     },

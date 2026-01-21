@@ -1,13 +1,15 @@
 // 环境配置
 const ENV_CONFIG = {
   development: {
-    playerBaseUrl: 'http://localhost:8080'
+    playerBaseUrl: 'http://localhost:8080',
+    apiBaseUrl: '/api'
   },
   // test: {
   //   playerBaseUrl: 'http://test-player.yourdomain.com'
   // },
   production: {
-    playerBaseUrl: 'http://lives.hbjcws.com.cn/'
+    playerBaseUrl: 'http://lives.hbjcws.com.cn/',
+    apiBaseUrl: 'http://lives.hbjcws.com.cn/api' // 生产环境直接访问
   }
 };
 

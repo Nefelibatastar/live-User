@@ -129,7 +129,7 @@ export default {
 
       this.sendingSms = true;
       try {
-        const res = await this.$api.sendCode({ phone:phone });
+        const res = await this.$api.sendCode({ phone: phone });
 
         if (res.code === 200) {
           this.$Message.success('验证码已发送');
@@ -191,6 +191,9 @@ export default {
 
           // 重置表单
           this.resetForm();
+          setTimeout(() => {
+            window.location.reload()
+          }, 1000)
         } else {
           this.$Message.error(result.message || '登录失败');
         }

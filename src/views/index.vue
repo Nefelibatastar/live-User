@@ -4,13 +4,51 @@
     <div class="live-left">
       <VideoPlayer :streamUrl="streamUrl" :liveStatus="liveStatus" :streamType="streamType" :startTime="startTime"
         :coverImageUrl="coverImageUrl" :streamData="streamData" @refresh="refreshLiveStatus" />
-      <LiveInfo :liveShowName="liveShowName" :startTime="startTime" />
+      <!-- 桌面端显示LiveInfo -->
+      <div class="desktop-live-info">
+        <LiveInfo :liveShowName="liveShowName" :startTime="startTime" />
+      </div>
     </div>
 
     <!-- 右侧信息区域 -->
     <div class="live-right">
-      <CommentSection ref="commentSection" :liveId="id" :userId="userId" :onlineCount="onlineCount"
-        @require-login="handleRequireLogin" @update-comments="handleCommentsUpdate" />
+      <!-- 桌面端显示完整的CommentSection -->
+      <div class="desktop-comments">
+        <CommentSection ref="commentSection" :liveId="id" :userId="userId" :onlineCount="onlineCount"
+          @require-login="handleRequireLogin" @update-comments="handleCommentsUpdate" />
+      </div>
+
+      <!-- 移动端tab切换 -->
+      <div class="mobile-tabs-section">
+        <!-- Tab标签 -->
+        <div class="mobile-tabs">
+          <div class="tab-item" :class="{ active: activeTab === 'info' }" @click="switchTab('info')">
+            <span class="tab-icon">📝</span>
+            <span class="tab-text">直播信息</span>
+          </div>
+          <div class="tab-item" :class="{ active: activeTab === 'comments' }" @click="switchTab('comments')">
+            <span class="tab-icon">💬</span>
+            <span class="tab-text">互动评论</span>
+            <!-- <span v-if="onlineCount > 0" class="online-badge">在线人数{{ onlineCount }}</span> -->
+          </div>
+        </div>
+
+        <!-- Tab内容 -->
+        <div class="tab-content">
+          <!-- 直播信息内容 -->
+          <div v-show="activeTab === 'info'" class="tab-pane">
+            <LiveInfo :liveShowName="liveShowName" :startTime="startTime" />
+          </div>
+
+          <!-- 评论内容 -->
+          <div v-show="activeTab === 'comments'" class="tab-pane">
+            <div class="mobile-comments">
+              <CommentSection ref="mobileCommentSection" :liveId="id" :userId="userId" :onlineCount="onlineCount"
+                @require-login="handleRequireLogin" @update-comments="handleCommentsUpdate" />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 报名表单悬浮按钮 -->
@@ -147,25 +185,32 @@ export default {
       hasAutoOpenedRegistration: false,
       commentPollingTimer: null,
       pollingInterval: 5000,
+      // 新增：当前激活的tab
+      activeTab: 'comments'
     };
   },
 
   mounted() {
     this.$nextTick(() => {
-    // 如果 Vuex 中有用户信息但本地没有同步，强制同步一次
-    if (this.$store.getters.isLoggedIn && !this.userId) {
-      const userInfo = this.$store.getters.userInfo;
-      if (userInfo) {
-        this.userId = userInfo.id || userInfo.userId;
-        console.log('强制同步用户ID:', this.userId);
+      // 如果 Vuex 中有用户信息但本地没有同步，强制同步一次
+      if (this.$store.getters.isLoggedIn && !this.userId) {
+        const userInfo = this.$store.getters.userInfo;
+        if (userInfo) {
+          this.userId = userInfo.id || userInfo.userId;
+          console.log('强制同步用户ID:', this.userId);
+        }
       }
-    }
-  });
+    });
     this.initPage();
+
+    // 监听窗口大小变化
+    this.handleResize();
+    window.addEventListener('resize', this.handleResize);
   },
 
   beforeDestroy() {
     this.cleanup();
+    window.removeEventListener('resize', this.handleResize);
   },
 
   watch: {
@@ -198,6 +243,19 @@ export default {
 
   methods: {
     ...mapActions(['showLoginModal', 'hideLoginModal']),
+
+    // 处理窗口大小变化
+    handleResize() {
+      // 移动端默认显示评论tab
+      if (window.innerWidth <= 768) {
+        this.activeTab = 'comments';
+      }
+    },
+
+    // 切换tab
+    switchTab(tab) {
+      this.activeTab = tab;
+    },
 
     // 处理手机号登录成功
     handlePhoneLoginSuccess(userInfo) {
@@ -1095,6 +1153,23 @@ export default {
   gap: 15px;
 }
 
+/* 桌面端LiveInfo和CommentSection */
+.desktop-live-info,
+.desktop-comments {
+  display: block;
+}
+
+.desktop-comments {
+  height: 100%;
+}
+
+/* 移动端Tabs容器 */
+.mobile-tabs-section {
+  display: none;
+  /* 默认隐藏，在移动端显示 */
+}
+
+/* 报名表单悬浮按钮 */
 .registration-fab {
   position: fixed;
   bottom: 30px;
@@ -1250,6 +1325,94 @@ export default {
   .live-left,
   .live-right {
     width: 100%;
+  }
+
+  /* 桌面端元素在移动端隐藏 */
+  .desktop-live-info,
+  .desktop-comments {
+    display: none;
+  }
+
+  /* 移动端显示Tabs */
+  .mobile-tabs-section {
+    display: block;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+
+  /* Tab标签样式 */
+  .mobile-tabs {
+    display: flex;
+    background: #f8f8f8;
+    /* padding: 0 10px; */
+    border-bottom: 1px solid #eee;
+  }
+
+  .tab-item {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 0;
+    position: relative;
+    cursor: pointer;
+    font-size: 13px;
+    color: #666;
+    transition: all 0.3s;
+    border-bottom: 1px solid transparent;
+  }
+
+  .tab-item.active {
+    color: #1890ff;
+    /* font-weight: 600; */
+    border-bottom-color: #1890ff;
+    background: white;
+  }
+
+  .tab-item:hover {
+    color: #40a9ff;
+  }
+
+  .tab-icon {
+    margin-right: 6px;
+    font-size: 16px;
+  }
+
+  .tab-text {
+    font-size: 14px;
+  }
+
+  .online-badge {
+    position: absolute;
+    top: 8px;
+    right: 15px;
+    background: #ff4d4f;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
+  }
+
+  /* Tab内容样式 */
+  .tab-content {
+    padding: 0;
+  }
+
+  .tab-pane {
+    /* height: 400px; */
+    overflow: hidden;
+  }
+
+  .mobile-comments {
+    height: 100%;
   }
 
   .registration-fab {
