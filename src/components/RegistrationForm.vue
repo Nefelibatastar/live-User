@@ -1,14 +1,7 @@
 <template>
-  <Modal 
-    :value="visible"
-    :title="modalTitle"
-    width="500"
-    :mask-closable="false"
-    @on-ok="handleSubmit"
-    @on-cancel="handleCancel"
-    @on-visible-change="handleVisibleChange"
-    class-name="registration-modal"
-  >
+  <Modal :value="visible" :title="modalTitle" width="500" :mask-closable="false" :closable="true" @on-ok="handleSubmit"
+    @on-cancel="handleCancel" @on-visible-change="handleVisibleChange" class-name="registration-modal"
+    :styles="{ top: '60px' }">
     <div class="registration-modal-content">
       <!-- 标题区域 -->
       <div class="modal-header-section">
@@ -25,14 +18,11 @@
       <div class="modal-form-section">
         <Form ref="registrationForm" :model="registrationData" :rules="registrationRules" label-position="top">
           <!-- 动态表单项 -->
-          <Form-item v-for="(field, index) in entryFromData" 
-            :key="field.uniqueKey || field.type + index"
-            :label="(index + 1).toString().padStart(2, '0') + ' ' + field.name" 
-            :prop="field.uniqueKey">
-            
+          <Form-item v-for="(field, index) in entryFromData" :key="field.uniqueKey || field.type + index"
+            :label="(index + 1).toString().padStart(2, '0') + ' ' + field.name" :prop="field.uniqueKey">
             <!-- 性别选择框 -->
-            <Select v-if="field.type === 'gender'" v-model="registrationData[field.uniqueKey]" 
-              placeholder="请选择性别" clearable>
+            <Select v-if="field.type === 'gender'" v-model="registrationData[field.uniqueKey]" placeholder="请选择性别"
+              clearable>
               <Option value="male">男</Option>
               <Option value="female">女</Option>
             </Select>
@@ -40,8 +30,8 @@
             <!-- 出生年月选择器 -->
             <DatePicker v-else-if="field.type === 'birthday'" type="date"
               :value="registrationData[field.uniqueKey] ? new Date(registrationData[field.uniqueKey]) : null"
-              @on-change="(date) => handleDateChange(date, field.uniqueKey)"
-              placeholder="请选择出生日期" style="width: 100%" clearable format="yyyy-MM-dd" />
+              @on-change="(date) => handleDateChange(date, field.uniqueKey)" placeholder="请选择出生日期" style="width: 100%"
+              clearable format="yyyy-MM-dd" />
 
             <!-- 文本输入框 -->
             <Input v-else v-model="registrationData[field.uniqueKey]"
@@ -102,26 +92,54 @@ export default {
   },
   watch: {
     visible(newVal) {
-      if (newVal) {
-        this.initForm();
+      if (newVal && this.formInitialized) {
+        // 弹框显示时重新加载数据
+        this.$nextTick(() => {
+          this.loadLocalData();
+        });
       }
     },
     entryFromData: {
       handler(newData) {
         if (newData && newData.length > 0) {
           this.buildForm(newData);
+          // 表单构建完成后立即加载数据
+          if (this.visible) {
+            this.$nextTick(() => {
+              this.loadLocalData();
+            });
+          }
         }
       },
       immediate: true,
       deep: true
-    }
+    },
+  },
+  mounted() {
+    // 确保弹框可以正常关闭
+    this.setupModalClosable();
   },
   methods: {
+    // 设置弹框可关闭
+    setupModalClosable() {
+      // 监听ESC键关闭
+      const handleEsc = (e) => {
+        if (e.key === 'Escape' && this.visible) {
+          this.handleCancel();
+        }
+      };
+
+      document.addEventListener('keydown', handleEsc);
+      this.$once('hook:beforeDestroy', () => {
+        document.removeEventListener('keydown', handleEsc);
+      });
+    },
+
     // 处理弹框可见性变化
     handleVisibleChange(visible) {
       this.$emit('update:visible', visible);
     },
-    
+
     // 初始化表单
     initForm() {
       this.loadLocalData();
@@ -131,29 +149,29 @@ export default {
         }
       });
     },
-    
+
     // 构建表单结构
     buildForm(fields) {
       this.registrationData = {};
       this.registrationRules = {};
-      
+
       const typeCount = {};
-      
+
       fields.forEach((field, index) => {
         if (!typeCount[field.type]) {
           typeCount[field.type] = 0;
         }
         typeCount[field.type]++;
-        
+
         const uniqueKey = `${field.type}_${index}`;
         field.uniqueKey = uniqueKey;
-        
+
         // 初始化数据
         this.$set(this.registrationData, uniqueKey, '');
-        
+
         // 构建验证规则
         const rules = [];
-        
+
         if (field.required) {
           rules.push({
             required: true,
@@ -161,7 +179,7 @@ export default {
             trigger: []
           });
         }
-        
+
         // 字段类型验证
         if (field.type === 'phone') {
           rules.push({
@@ -228,58 +246,83 @@ export default {
             trigger: []
           });
         }
-        
+
         this.$set(this.registrationRules, uniqueKey, rules);
       });
-      
+
       this.formInitialized = true;
     },
-    
+
     // 加载本地数据
     async loadLocalData() {
       try {
         const storageKey = `registration_${this.liveId}`;
         const localData = localStorage.getItem(storageKey);
-        
+
         if (localData) {
           const parsedData = JSON.parse(localData);
           this.registrationId = parsedData.registrationId || null;
-          
-          const storedData = parsedData.registrationData || {};
-          
-          // 填充表单数据
-          this.entryFromData.forEach(field => {
-            if (!field.uniqueKey) return;
-            
-            let value = '';
-            if (storedData[field.name] !== undefined) {
-              value = storedData[field.name];
-            } else {
-              // 尝试其他匹配方式
-              const matchingKey = Object.keys(storedData).find(key =>
-                key.includes(field.name) || field.name.includes(key)
-              );
-              if (matchingKey) {
-                value = storedData[matchingKey];
+
+          if (this.registrationId && parsedData.registrationData) {
+            const storedData = parsedData.registrationData || {};
+            console.log('从本地存储加载的数据:', storedData);
+
+            // 直接创建一个新的表单数据对象
+            const formData = {};
+
+            // 遍历所有字段，设置对应的值
+            this.entryFromData.forEach(field => {
+              if (!field.uniqueKey || !field.name) return;
+
+              // 从存储数据中获取值
+              let value = storedData[field.name] || '';
+
+              // 处理性别字段的格式
+              if (field.type === 'gender' && value) {
+                if (value === '男') value = 'male';
+                else if (value === '女') value = 'female';
               }
-            }
-            
-            // 性别字段转换
-            if (field.type === 'gender' && value) {
-              if (value === '男') value = 'male';
-              else if (value === '女') value = 'female';
-            }
-            
-            if (value !== undefined && value !== '' && value !== null) {
-              this.$set(this.registrationData, field.uniqueKey, value);
-            }
-          });
+
+              // 处理日期字段格式
+              if (field.type === 'birthday' && value) {
+                // 确保是 yyyy-MM-dd 格式
+                if (typeof value === 'string') {
+                  // 尝试解析日期
+                  try {
+                    const date = new Date(value);
+                    if (!isNaN(date.getTime())) {
+                      const year = date.getFullYear();
+                      const month = String(date.getMonth() + 1).padStart(2, '0');
+                      const day = String(date.getDate()).padStart(2, '0');
+                      value = `${year}-${month}-${day}`;
+                    }
+                  } catch (e) {
+                    value = '';
+                  }
+                }
+              }
+
+              // 使用 Vue.set 确保响应式
+              this.$set(formData, field.uniqueKey, value);
+              console.log(`设置字段: ${field.name}=${value}`);
+            });
+
+            // 直接替换整个 registrationData 对象
+            this.registrationData = { ...formData };
+
+            console.log('最终表单数据:', this.registrationData);
+
+            // 强制更新视图
+            this.$nextTick(() => {
+              console.log('$nextTick 后的表单数据:', this.registrationData);
+            });
+          }
         }
       } catch (error) {
         console.error('加载本地数据失败:', error);
       }
     },
-    
+
     // 处理日期变化
     handleDateChange(date, uniqueKey) {
       if (date) {
@@ -302,7 +345,7 @@ export default {
         this.registrationData[uniqueKey] = '';
       }
     },
-    
+
     // 提交表单
     async handleSubmit() {
       this.$refs.registrationForm.validate(async (valid) => {
@@ -310,11 +353,11 @@ export default {
           this.$Message.error('请填写完整的报名信息');
           return;
         }
-        
+
         if (this.registrationLoading) return;
-        
+
         this.registrationLoading = true;
-        
+
         try {
           // 准备数据
           const chineseData = {};
@@ -324,29 +367,29 @@ export default {
               chineseData[field.name] = this.transformValueForStorage(field.type, value);
             }
           });
-          
+
           const submitData = {
             liveStreamId: this.liveId,
             entryFromId: this.entryFromId || undefined,
             registrationData: chineseData
           };
-          
+
           // 提交到服务器
-          const res = this.registrationId 
+          const res = this.registrationId
             ? await this.$api.update({ id: this.registrationId, ...submitData })
             : await this.$api.add(submitData);
-          
+
           if (res.code === 200) {
             // 更新本地存储
             await this.saveToLocalStorage(res.data, chineseData);
-            
+
             this.$Message.success(this.registrationId ? '修改成功！' : '报名成功！');
             this.$emit('success', {
               registrationId: res.data?.id || this.registrationId,
               isRegistered: true,
               data: res.data
             });
-            
+
             this.handleCancel();
           }
         } catch (error) {
@@ -357,7 +400,7 @@ export default {
         }
       });
     },
-    
+
     // 保存到本地存储
     async saveToLocalStorage(serverData, chineseData) {
       try {
@@ -373,23 +416,23 @@ export default {
           submittedToServer: true,
           lastSubmitTime: new Date().toISOString()
         };
-        
+
         localStorage.setItem(storageKey, JSON.stringify(storageData));
       } catch (error) {
         console.error('保存到本地存储失败:', error);
       }
     },
-    
+
     // 取消
     handleCancel() {
       this.$emit('update:visible', false);
     },
-    
+
     // 判断是否有值
     hasValue(value) {
       return value !== undefined && value !== null && value !== '';
     },
-    
+
     // 转换值用于存储
     transformValueForStorage(fieldType, value) {
       if (fieldType === 'gender') {
@@ -403,11 +446,11 @@ export default {
 </script>
 
 <style scoped>
-/* 样式保持不变 */
+/* 报名表弹框内容容器 - 简化样式 */
 .registration-modal-content {
   display: flex;
   flex-direction: column;
-  height: 500px;
+  min-height: 200px;
   max-height: 70vh;
 }
 
@@ -422,13 +465,18 @@ export default {
   font-size: 15px;
   font-weight: 600;
   color: #646464;
+  text-align: center;
+  margin-top: 10px;
 }
 
 .modal-form-section {
   flex: 1;
   overflow-y: auto;
-  padding-right: 8px;
+  overflow-x: hidden;
+  padding-right: 10px;
   margin-bottom: 15px;
+  max-height: 60vh;
+  min-height: 50vh;
 }
 
 /* 自定义滚动条样式 */
@@ -449,19 +497,46 @@ export default {
 .modal-form-section::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+</style>
+
+<!-- 添加全局样式 -->
+<style>
+/* 全局样式 - 确保弹框正确显示 */
+.registration-modal .ivu-modal {
+  max-height: 90vh;
+}
+
+.registration-modal .ivu-modal-content {
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.registration-modal .ivu-modal-body {
+  flex: 1;
+  overflow: hidden;
+  padding: 16px;
+}
+
+/* 确保弹框能够正确居中 */
+.registration-modal-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* 响应式调整 */
 @media (max-width: 768px) {
-  .registration-modal-content {
-    height: 450px;
-    max-height: 60vh;
+  .registration-modal .ivu-modal {
+    width: 90% !important;
+    max-height: 85vh;
   }
 }
 
 @media (max-width: 480px) {
-  .registration-modal-content {
-    height: 400px;
-    max-height: 55vh;
+  .registration-modal .ivu-modal {
+    width: 95% !important;
+    max-height: 80vh;
   }
 }
 </style>

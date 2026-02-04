@@ -110,10 +110,7 @@ export default {
 
   mounted() {
     // 检查本地是否有记住的手机号
-    const savedPhone = localStorage.getItem('remembered_phone');
-    if (savedPhone) {
-      this.formData.phone = savedPhone;
-    }
+    
   },
 
   methods: {
@@ -139,7 +136,7 @@ export default {
         }
       } catch (error) {
         console.error('发送验证码失败:', error);
-        this.$Message.error('发送失败，请重试');
+        // this.$Message.error('发送失败，请重试');
       } finally {
         this.sendingSms = false;
       }
@@ -180,20 +177,31 @@ export default {
           // 登录成功
           this.$Message.success('登录成功');
 
-          // 记住手机号
-          localStorage.setItem('remembered_phone', this.formData.phone);
+          // 记住手机号 - 确保手机号有效
+          // const phone = this.formData.phone.trim();
+          // if (phone && /^1[3-9]\d{9}$/.test(phone)) {
+          //   localStorage.setItem('remembered_phone', phone);
+          //   console.log('手机号已保存到本地存储:', phone);
+          // } else {
+          //   console.warn('，不保存到本地存储:', phone);
+          // }
 
           // 关闭弹框
           this.showModal = false;
 
-          // 触发登录成功事件
-          this.$emit('login-success', result.data);
+          // 触发登录成功事件，传递完整的用户信息
+          this.$emit('login-success', {
+            userInfo: result.data,
+            userId: result.data?.user?.id || ''
+          });
 
           // 重置表单
           this.resetForm();
-          setTimeout(() => {
-            window.location.reload()
-          }, 1000)
+
+          // 注释掉页面刷新，改为触发事件让父组件处理
+          // setTimeout(() => {
+          //   window.location.reload();
+          // }, 1000);
         } else {
           this.$Message.error(result.message || '登录失败');
         }

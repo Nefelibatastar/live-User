@@ -13,8 +13,6 @@ const api = {
   add: (params) => request.post(`/userRegistrationData/add`, params),
   // userRegistrationData/getId 用户报名信息回显
   getId: (params) => request.get(`/userRegistrationData/getId`, { params }),
-  // userRegistrationData/list 用户报名信息查询
-  // list: (params) => request.get(`/userRegistrationData/list`, { params }),
   // userRegistrationData/update 用户报名信息修改
   update: (params) => request.put(`/userRegistrationData/update`, params),
 
@@ -31,6 +29,10 @@ const api = {
   addComment: (params) => request.post(`/liveComment/add`, params),
   // /liveComment/delete 删除评论
   deleteComment: (params) => request.delete(`/liveComment/delete`, params),
+  // /liveOnline/addUser 增加在线用户
+  addUser: (params) => request.get(`/liveOnline/addUser`, {params}),
+  // /live0nline/removeUser 减少在线用户
+  removeUser: (params) => request.get(`/liveOnline/removeUser`, {params}),
 };
 
 export default api;

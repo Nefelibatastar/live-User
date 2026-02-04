@@ -53,23 +53,38 @@ export default {
   },
   methods: {
     startCountdown() {
+      console.log('时间', this.startTime);
+
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
       }
 
       const updateCountdown = () => {
         try {
-          const [datePart, timePart] = this.startTime.split(' ');
-          const [year, month, day] = datePart.split('-').map(Number);
-          let sHours = 0, sMinutes = 0, sSeconds = 0;
-          if (timePart) {
-            const [h, m, s] = timePart.split(':').map(Number);
-            sHours = h;
-            sMinutes = m;
-            sSeconds = s;
+          let start;
+          if (this.startTime.includes('T')) {
+            // ISO 8601 格式: 2026-02-07T00:00:00
+            start = new Date(this.startTime);
+          } else if (this.startTime.includes(' ')) {
+            // 传统格式: 2026-02-07 00:00:00
+            const [datePart, timePart] = this.startTime.split(' ');
+            const [year, month, day] = datePart.split('-').map(Number);
+            let sHours = 0, sMinutes = 0, sSeconds = 0;
+
+            if (timePart) {
+              const [h, m, s] = timePart.split(':').map(Number);
+              sHours = h || 0;
+              sMinutes = m || 0;
+              sSeconds = s || 0;
+            }
+
+            start = new Date(year, month - 1, day, sHours, sMinutes, sSeconds);
+          } else {
+            // 仅日期格式: 2026-02-07
+            const [year, month, day] = this.startTime.split('-').map(Number);
+            start = new Date(year, month - 1, day, 0, 0, 0);
           }
 
-          const start = new Date(year, month - 1, day, sHours, sMinutes, sSeconds);
           const now = new Date();
 
           if (isNaN(start.getTime())) {
@@ -110,7 +125,7 @@ export default {
       updateCountdown();
       this.countdownTimer = setInterval(updateCountdown, 1000);
     },
-    
+
     clearCountdown() {
       if (this.countdownTimer) {
         clearInterval(this.countdownTimer);
@@ -118,7 +133,7 @@ export default {
       }
       this.countdown = { days: '00', hours: '00', minutes: '00', seconds: '00' };
     },
-    
+
     padZero(num) {
       return num.toString().padStart(2, '0');
     }
@@ -182,18 +197,18 @@ export default {
   .countdown-timer {
     gap: 6px;
   }
-  
+
   .countdown-number {
     font-size: 14px;
     min-width: 26px;
     padding: 3px 6px;
   }
-  
+
   .countdown-unit {
     font-size: 12px;
     margin-right: 4px;
   }
-  
+
   .countdown-text {
     font-size: 12px;
   }

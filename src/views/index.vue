@@ -6,20 +6,21 @@
         :coverImageUrl="coverImageUrl" :streamData="streamData" @refresh="refreshLiveStatus" />
       <!-- 桌面端显示LiveInfo -->
       <div class="desktop-live-info">
-        <LiveInfo :liveShowName="liveShowName" :startTime="startTime" />
+        <LiveInfo :liveShowName="liveShowName" :startTime="startTime" :introduce="introduce" />
       </div>
     </div>
 
     <!-- 右侧信息区域 -->
     <div class="live-right">
-      <!-- 桌面端显示完整的CommentSection -->
-      <div class="desktop-comments">
-        <CommentSection ref="commentSection" :liveId="id" :userId="userId" :onlineCount="onlineCount"
-          @require-login="handleRequireLogin" @update-comments="handleCommentsUpdate" />
+      <!-- 桌面端：直接显示评论 -->
+      <div class="desktop-comments" v-if="!isMobile">
+        <CommentSection ref="commentSection" :liveId="id" :userId="userId" :liveStatus="liveStatus"
+          :onlineCount="onlineCount" :comments="comments" @require-login="handleRequireLogin"
+          @submit-comment="handleSubmitComment" @reply-comment="handleReplyComment" />
       </div>
 
-      <!-- 移动端tab切换 -->
-      <div class="mobile-tabs-section">
+      <!-- 移动端：使用tab切换 -->
+      <div class="mobile-tabs-section" v-else>
         <!-- Tab标签 -->
         <div class="mobile-tabs">
           <div class="tab-item" :class="{ active: activeTab === 'info' }" @click="switchTab('info')">
@@ -29,7 +30,6 @@
           <div class="tab-item" :class="{ active: activeTab === 'comments' }" @click="switchTab('comments')">
             <span class="tab-icon">💬</span>
             <span class="tab-text">互动评论</span>
-            <!-- <span v-if="onlineCount > 0" class="online-badge">在线人数{{ onlineCount }}</span> -->
           </div>
         </div>
 
@@ -37,14 +37,15 @@
         <div class="tab-content">
           <!-- 直播信息内容 -->
           <div v-show="activeTab === 'info'" class="tab-pane">
-            <LiveInfo :liveShowName="liveShowName" :startTime="startTime" />
+            <LiveInfo :liveShowName="liveShowName" :startTime="startTime" :introduce="introduce" />
           </div>
 
           <!-- 评论内容 -->
           <div v-show="activeTab === 'comments'" class="tab-pane">
             <div class="mobile-comments">
-              <CommentSection ref="mobileCommentSection" :liveId="id" :userId="userId" :onlineCount="onlineCount"
-                @require-login="handleRequireLogin" @update-comments="handleCommentsUpdate" />
+              <CommentSection ref="commentSection" :liveId="id" :userId="userId" :onlineCount="onlineCount"
+                :liveStatus="liveStatus" :comments="comments" @require-login="handleRequireLogin"
+                @submit-comment="handleSubmitComment" @reply-comment="handleReplyComment" />
             </div>
           </div>
         </div>
@@ -58,39 +59,11 @@
       <div class="fab-text">报名表</div>
     </div>
 
-    <!-- 报名表单弹框 -->
-    <Modal v-model="showRegistrationModal" :title="isRegistered ? '修改报名信息' : liveShowName + ' - 报名表'" width="500"
-      :styles="{ margin: '0' }" :mask-closable="false" @on-ok="submitRegistration" @on-cancel="cancelRegistration"
-      class-name="registration-modal">
-      <div class="registration-modal-content">
-        <div class="modal-header-section">
-          <Alert v-if="isRegistered" type="info" show-icon style="margin-bottom: 15px;">
-            您已报名，可修改信息
-          </Alert>
-          <div class="registration-title">
-            {{ isRegistered ? '修改报名信息' : '请如实填写以下信息' }}
-          </div>
-        </div>
-        <div class="modal-form-section">
-          <Form ref="registrationForm" :model="registrationData" :rules="registrationRules" label-position="top">
-            <Form-item v-for="(field, index) in entryFromData" :key="field.uniqueKey || field.type + index"
-              :label="(index + 1).toString().padStart(2, '0') + ' ' + field.name" :prop="field.uniqueKey">
-              <Select v-if="field.type === 'gender'" v-model="registrationData[field.uniqueKey]" placeholder="请选择性别"
-                clearable>
-                <Option value="male">男</Option>
-                <Option value="female">女</Option>
-              </Select>
-              <DatePicker v-else-if="field.type === 'birthday'" type="date"
-                :value="registrationData[field.uniqueKey] ? new Date(registrationData[field.uniqueKey]) : null"
-                @on-change="(date) => handleBirthdayChange(date, field.uniqueKey)"
-                :placeholder="field.placeholder || '请选择出生日期'" style="width: 100%" clearable format="yyyy-MM-dd" />
-              <Input v-else v-model="registrationData[field.uniqueKey]"
-                :placeholder="field.placeholder || '请输入' + field.name" clearable />
-            </Form-item>
-          </Form>
-        </div>
-      </div>
-    </Modal>
+    <!-- 使用封装的报名表单组件 -->
+    <RegistrationForm ref="registrationFormRef" :visible="showRegistrationModal" :live-show-name="liveShowName"
+      :entry-from-data="entryFromData" :is-registered="isRegistered" :live-id="id" :user-id="userId"
+      :entry-from-id="entryFromId" @update:visible="showRegistrationModal = $event"
+      @success="handleRegistrationSuccess" />
 
     <!-- 登录提示弹框 - 修改为登录确认弹框 -->
     <Modal v-model="showLoginPromptModal" title="温馨提示" width="400" :mask-closable="false" :closable="true"
@@ -122,6 +95,7 @@ import VideoPlayer from '../components/VideoPlayer.vue';
 import LiveInfo from '../components/LiveInfo.vue';
 import CommentSection from '../components/CommentSection.vue';
 import PhoneLoginModal from '../components/login/login.vue';
+import RegistrationForm from '../components/RegistrationForm.vue';
 import { config } from '../config';
 import { mapState, mapGetters, mapActions } from 'vuex';
 
@@ -131,7 +105,8 @@ export default {
     VideoPlayer,
     LiveInfo,
     CommentSection,
-    PhoneLoginModal
+    PhoneLoginModal,
+    RegistrationForm
   },
   computed: {
     ...mapState(['isLoginModalVisible']),
@@ -161,6 +136,7 @@ export default {
     return {
       liveShowName: '',
       startTime: '',
+      introduce: '暂无介绍',
       liveStatus: '0',
       coverImageUrl: '',
       streamUrl: "",
@@ -170,12 +146,8 @@ export default {
       onlineCount: 0,
       showOnlineCount: true,
       showRegistrationModal: false,
-      registrationLoading: false,
-      entryFromData: [],
-      registrationData: {},
-      registrationRules: {},
       isRegistered: false,
-      registrationId: null,
+      entryFromData: [],
       isEntryFrom: '0',
       entryFromId: '',
       showLoginPromptModal: false,
@@ -183,71 +155,627 @@ export default {
       formInitialized: false,
       isAutoOpenRegistration: false,
       hasAutoOpenedRegistration: false,
-      commentPollingTimer: null,
-      pollingInterval: 5000,
       // 新增：当前激活的tab
-      activeTab: 'comments'
+      activeTab: 'comments',
+      // 新增：是否是移动端
+      isMobile: false,
+      // WebSocket相关
+      websocket: null,
+      wsReconnectInterval: 5000,
+      wsReconnectAttempts: 0,
+      maxWsReconnectAttempts: 10,
+      // 评论数据 - 统一管理
+      comments: [],
+      tempComments: {}, // 存储临时评论
+      shouldScrollToBottom: true,
+      // WebSocket连接状态
+      wsConnected: false,
+      wsAuthenticated: false, // 是否已认证
+      // 重复登录相关
+      duplicateLoginVisible: false, // 重复登录提示弹窗
+      duplicateLoginMessage: '', // 重复登录提示消息
+      duplicateLoginTimer: null, // 关闭页面的定时器
+      isDuplicateLogin: false, // 是否检测到重复登录
     };
   },
-
-  mounted() {
-    this.$nextTick(() => {
-      // 如果 Vuex 中有用户信息但本地没有同步，强制同步一次
-      if (this.$store.getters.isLoggedIn && !this.userId) {
-        const userInfo = this.$store.getters.userInfo;
-        if (userInfo) {
-          this.userId = userInfo.id || userInfo.userId;
-          console.log('强制同步用户ID:', this.userId);
-        }
-      }
+  created() {
+    this.$store.dispatch('checkLoginStatus').then(isLoggedIn => {
+      this.userId = isLoggedIn ? this.$store.getters.userId : '';
     });
+  },
+  mounted() {
     this.initPage();
-
-    // 监听窗口大小变化
     this.handleResize();
     window.addEventListener('resize', this.handleResize);
   },
 
   beforeDestroy() {
-    this.cleanup();
     window.removeEventListener('resize', this.handleResize);
+    this.cleanup();
+    this.closeWebSocket();
+    // 清理定时器
+    if (this.duplicateLoginTimer) {
+      clearTimeout(this.duplicateLoginTimer);
+      this.duplicateLoginTimer = null;
+    }
   },
 
   watch: {
     // 监听用户信息变化
-    userInfo(newUser) {
-      if (newUser) {
-        console.log('用户信息已更新:', newUser);
-        // 更新本地 userId
-        this.userId = newUser.id || newUser.userId;
+    '$store.state.user': {
+      deep: true,
+      handler(newUser) {
+        console.log('Vuex登录态用户状态变化:', newUser);
+        if (newUser && this.$store.getters.isLoggedIn) {
+          const newUserId = this.$store.getters.userId;
+          console.log('同步Vuex登录态用户ID:', newUserId);
 
-        // 登录成功后，如果报名表弹框还在显示，更新表单数据
-        if (this.showRegistrationModal) {
-          this.$nextTick(async () => {
-            await this.checkLocalRegistration();
-            await this.checkRegistrationStatus();
+          // 用户ID发生变化时，重新认证WebSocket
+          if (newUserId !== this.userId) {
+            this.userId = newUserId;
+            this.authenticateWebSocket();
+          }
+
+          this.userId = newUserId;
+
+          // 更新评论组件状态
+          this.$nextTick(() => {
+            if (this.$refs.commentSection) {
+              this.$refs.commentSection.currentUserId = this.userId;
+            }
+          });
+        } else {
+          this.userId = '';
+          this.isRegistered = false;
+
+          // 更新评论组件状态
+          this.$nextTick(() => {
+            if (this.$refs.commentSection) {
+              this.$refs.commentSection.currentUserId = '';
+            }
           });
         }
-
-        // 关闭登录提示弹框
-        if (this.showLoginPromptModal) {
-          this.showLoginPromptModal = false;
-        }
-      } else {
-        // 用户信息为空时，清空 userId
-        console.log('用户信息已清空');
-        this.userId = '';
       }
-    }
+    },
   },
-
   methods: {
-    ...mapActions(['showLoginModal', 'hideLoginModal']),
+    ...mapActions(['showLoginModal', 'hideLoginModal', 'logout']),
+
+    // 初始化WebSocket连接
+    initWebSocket() {
+      if (!this.id) {
+        console.warn('直播ID为空，无法建立WebSocket连接');
+        return;
+      }
+
+      // 如果已经检测到重复登录，不再重新连接
+      if (this.isDuplicateLogin) {
+        console.log('检测到重复登录，不再建立WebSocket连接');
+        return;
+      }
+
+      // 关闭现有连接
+      if (this.websocket) {
+        this.closeWebSocket();
+      }
+
+      // 构建WebSocket URL - 游客连接
+      const wsUrl = `ws://${config.websocketUrl}/websocket/online/${this.id}`;
+      console.log('正在建立WebSocket连接（游客身份）:', wsUrl);
+
+      try {
+        this.websocket = new WebSocket(wsUrl);
+
+        this.websocket.onopen = () => {
+          console.log('WebSocket连接已建立（游客身份）');
+          this.wsConnected = true;
+          this.wsReconnectAttempts = 0;
+
+          // 连接建立后，如果用户已登录，发送认证消息
+          if (this.userId) {
+            this.authenticateWebSocket();
+          }
+        };
+
+        this.websocket.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            console.log('收到WebSocket消息:', data);
+            this.handleWebSocketMessage(data);
+          } catch (error) {
+            console.error('解析WebSocket消息失败:', error, '原始数据:', event.data);
+          }
+        };
+
+        this.websocket.onerror = (error) => {
+          console.error('WebSocket连接错误:', error);
+        };
+
+        this.websocket.onclose = (event) => {
+          console.log('WebSocket连接关闭:', event.code, event.reason);
+          this.wsConnected = false;
+          this.wsAuthenticated = false;
+
+          // 如果已经检测到重复登录，不再重连
+          if (this.isDuplicateLogin) {
+            return;
+          }
+
+          // 如果不是正常关闭，尝试重连
+          if (event.code !== 1000 && this.wsReconnectAttempts < this.maxWsReconnectAttempts) {
+            console.log(`WebSocket连接断开，${this.wsReconnectInterval / 1000}秒后尝试重连...`);
+            setTimeout(() => {
+              this.wsReconnectAttempts++;
+              this.initWebSocket();
+            }, this.wsReconnectInterval);
+          }
+        };
+      } catch (error) {
+        console.error('创建WebSocket失败:', error);
+      }
+    },
+
+    // 认证WebSocket连接（用户登录后调用）
+    authenticateWebSocket() {
+      if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+        console.warn('WebSocket未连接，无法认证');
+        return;
+      }
+
+      if (!this.userId) {
+        console.warn('用户未登录，无法认证WebSocket');
+        return;
+      }
+
+      // 获取token
+      let token = '';
+      try {
+        token = localStorage.getItem('token') || '';
+      } catch (e) {
+        console.error('获取token失败:', e);
+      }
+
+      if (!token) {
+        console.warn('token为空，无法认证');
+        return;
+      }
+
+      // 发送认证消息
+      const authMessage = {
+        type: 'auth',
+        data: token,
+        userId: this.userId
+      };
+
+      try {
+        this.websocket.send(JSON.stringify(authMessage));
+        console.log('发送WebSocket认证消息:', authMessage);
+      } catch (error) {
+        console.error('发送认证消息失败:', error);
+      }
+    },
+
+    // 处理WebSocket消息
+    handleWebSocketMessage(data) {
+      const { type, data: messageData } = data;
+
+      switch (type) {
+        case 'initialization':
+          this.handleInitializationData(messageData);
+          break;
+
+        case 'onlineCount':
+          this.onlineCount = messageData;
+          console.log('在线人数更新:', this.onlineCount);
+          break;
+
+        case 'newComment':
+          this.handleNewComment(messageData);
+          break;
+
+        case 'updateComments':
+          this.handleUpdateComments(messageData);
+          break;
+
+        case 'commentDeleted':
+          this.handleCommentDeleted(messageData);
+          break;
+
+        case 'authResponse':
+          this.handleAuthResponse(messageData);
+          break;
+        case 'authSuccess':
+          console.log(messageData)
+          break;
+        case 'authFailed':
+          this.clearLoginStatus(messageData)
+          break;
+        case 'duplicateLogin':
+          // 处理重复登录
+          this.handleDuplicateLogin(messageData);
+          break;
+
+        default:
+          console.warn('未知的WebSocket消息类型:', type, data);
+      }
+    },
+
+    // 处理重复登录
+    handleDuplicateLogin(messageData) {
+      console.log('检测到重复登录:', messageData);
+
+      // 设置重复登录标志
+      this.isDuplicateLogin = true;
+
+      // 设置提示消息
+      const msg = messageData.message || '您的账号已在其他地方登录，您已被强制下线。';
+      this.duplicateLoginMessage = msg;
+
+      // 立即关闭WebSocket连接
+      // this.closeWebSocket();
+
+      // 清除本地登录状态
+      // this.clearLoginStatus();
+
+      // 禁止所有用户操作
+      this.disableUserOperations();
+
+      // 添加全局遮罩层
+      this.addGlobalMask();
+    },
+
+    // 清除登录状态
+    clearLoginStatus() {
+      // 清除本地存储的登录信息
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('userInfo');
+        localStorage.removeItem('refreshToken');
+      } catch (e) {
+        console.error('清除本地存储失败:', e);
+      }
+
+      // 清除Vuex中的用户状态
+      this.logout();
+
+      // 重置用户ID
+      this.userId = '';
+
+      // 更新评论组件状态
+      this.$nextTick(() => {
+        if (this.$refs.commentSection) {
+          this.$refs.commentSection.currentUserId = '';
+        }
+      });
+    },
+
+    // 禁止用户操作
+    disableUserOperations() {
+      // 禁用页面所有输入和按钮
+      document.body.style.pointerEvents = 'none';
+      document.body.style.userSelect = 'none';
+      document.body.style.cursor = 'not-allowed';
+
+      // 禁用所有input、textarea、button、select元素
+      const disableElements = ['input', 'textarea', 'button', 'select', 'a'];
+      disableElements.forEach(tag => {
+        const elements = document.getElementsByTagName(tag);
+        for (let i = 0; i < elements.length; i++) {
+          elements[i].setAttribute('disabled', 'disabled');
+          elements[i].style.pointerEvents = 'none';
+          elements[i].style.opacity = '0.5';
+        }
+      });
+    },
+
+    // 添加全局遮罩层
+    addGlobalMask() {
+      // 移除已存在的遮罩层
+      const existingMask = document.getElementById('duplicate-login-mask');
+      if (existingMask) {
+        document.body.removeChild(existingMask);
+      }
+
+      // 创建遮罩层
+      const mask = document.createElement('div');
+      mask.id = 'duplicate-login-mask';
+      mask.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.8);
+        z-index: 9999;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        color: white;
+        font-size: 18px;
+        text-align: center;
+        padding: 20px;
+      `;
+
+      // 添加提示内容
+      mask.innerHTML = `
+        <div style="margin-bottom: 20px; font-size: 24px; color: #ff4d4f;">⚠️</div>
+        <div style="font-size: 18px; margin-bottom: 10px; font-weight: bold;">账号在其他地方登录</div>
+        <div style="font-size: 14px; margin-bottom: 20px; line-height: 1.5;">${this.duplicateLoginMessage}</div>
+        <div style="font-size: 18px; margin-bottom: 10px; font-weight: bold;">请您关闭当前页！</div>
+      `;
+      // <div style="font-size: 12px; color: #ccc; margin-bottom: 30px;">页面将在 <span id="countdown">5</span> 秒后关闭...</div>
+      // <button id="close-now-btn" style="padding: 8px 20px; background: #1890ff; color: white; border: none; border-radius: 4px; cursor: pointer;">立即关闭</button>
+      document.body.appendChild(mask);
+    },
+
+    // 关闭页面
+    closePage() {
+      console.log('正在关闭页面...');
+
+      // 清理资源
+      this.cleanup();
+
+      // 移除全局遮罩层
+      const mask = document.getElementById('duplicate-login-mask');
+      if (mask) {
+        document.body.removeChild(mask);
+      }
+
+      // 恢复页面样式
+      document.body.style.pointerEvents = '';
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+
+      // 尝试关闭当前标签页（如果浏览器允许）
+      if (window.history.length > 1) {
+        // 如果有历史记录，返回上一页
+        window.history.back();
+      } else {
+        // 否则跳转到空白页或首页
+        window.location.href = 'about:blank';
+
+      }
+    },
+
+    // 处理认证响应
+    handleAuthResponse(responseData) {
+      console.log('收到WebSocket认证响应:', responseData);
+      if (responseData.success) {
+        this.wsAuthenticated = true;
+        console.log('WebSocket认证成功');
+      } else {
+        this.wsAuthenticated = false;
+        console.warn('WebSocket认证失败:', responseData.message);
+      }
+    },
+
+    // 处理初始化数据
+    handleInitializationData(initData) {
+      console.log('处理初始化数据:', initData);
+
+      // 更新在线人数
+      if (initData.onlineCount !== undefined) {
+        this.onlineCount = initData.onlineCount;
+      }
+
+      // 更新直播信息
+      if (initData.liveStream) {
+        const liveStream = initData.liveStream;
+        this.updateLiveInfo(liveStream);
+      }
+
+      // 更新评论数据
+      if (initData.comments && Array.isArray(initData.comments)) {
+        console.log('收到初始评论数据，数量:', initData.comments.length);
+        this.comments = this.processComments(initData.comments);
+
+        // 初始化完成后滚动到底部
+        this.$nextTick(() => {
+          this.scrollCommentsToBottom();
+        });
+      }
+    },
+
+    // 更新直播信息
+    updateLiveInfo(liveStream) {
+      this.liveShowName = liveStream.liveShowName || '';
+      this.startTime = liveStream.startTime || '';
+      this.liveStatus = liveStream.liveStatus || '0';
+      this.introduce = liveStream.introduce || '暂无介绍';
+      this.isEntryFrom = liveStream.isEntryFrom || '0';
+      this.entryFromId = liveStream.entryFromId || '';
+
+      // 处理封面图
+      if (liveStream.liveCover) {
+        this.coverImageUrl = `${config.fileBaseUrl}/api/sysFile/image/${liveStream.liveCover}`;
+      }
+
+      // 处理流数据
+      if (liveStream.liveStatus === '1' && (liveStream.pullFlvUrl || liveStream.pullM3u8Url)) {
+        this.parseStreamData(liveStream);
+      }
+
+      // 更新streamData
+      this.streamData = liveStream;
+
+      // 如果有报名表单数据需要处理
+      if (this.isEntryFrom === '1' && this.entryFromId) {
+        this.fetchEntryFromData();
+      }
+    },
+
+    // 处理新评论（实时推送）
+    handleNewComment(commentData) {
+      console.log('收到新评论:', commentData);
+      const processedComment = this.processSingleComment(commentData);
+
+      // 防止重复添加
+      const exists = this.comments.some(c => c.id === processedComment.id);
+      if (!exists) {
+        this.comments.push(processedComment); // 新评论添加到末尾
+
+        // 限制评论数量
+        if (this.comments.length > 100) {
+          this.comments = this.comments.slice(0, 100);
+        }
+
+        // 如果有对应的临时评论，移除它
+        if (processedComment.id && this.tempComments[processedComment.id]) {
+          delete this.tempComments[processedComment.id];
+        }
+
+        // 通知子组件滚动到底部
+        this.$nextTick(() => {
+          this.scrollCommentsToBottom();
+        });
+      }
+    },
+
+    scrollCommentsToBottom() {
+      if (this.$refs.commentSection && this.$refs.commentSection.scrollToBottom) {
+        this.$refs.commentSection.scrollToBottom();
+      }
+    },
+
+    // 批量更新评论
+    handleUpdateComments(commentsData) {
+      console.log('批量更新评论:', commentsData);
+      if (Array.isArray(commentsData)) {
+        const processedComments = this.processComments(commentsData);
+        this.comments = processedComments;
+      }
+    },
+
+    // 处理评论删除
+    handleCommentDeleted(commentId) {
+      console.log('评论被删除:', commentId);
+      this.comments = this.comments.filter(comment => comment.id !== commentId);
+    },
+
+    // 处理评论提交（用户主动提交）
+    async handleSubmitComment(commentData) {
+      if (!this.userId) {
+        this.handleRequireLogin();
+        return;
+      }
+
+      // 检查是否检测到重复登录
+      if (this.isDuplicateLogin) {
+        this.$Message.warning('账号已在其他地方登录，无法提交评论');
+        return;
+      }
+
+      try {
+        // 直接提交到服务器，不使用乐观更新
+        const res = await this.$api.addComment(commentData);
+
+        if (res.code === 200) {
+          console.log('评论提交成功:', res.data);
+          this.$Message.success(commentData.parentId ? '回复成功' : '评论成功');
+
+          // 服务器返回的数据会通过WebSocket推送回来
+          // 这里不需要做任何处理，等待WebSocket推送即可
+        } else {
+          this.$Message.error(res.message || '评论失败');
+        }
+      } catch (error) {
+        console.error('提交评论失败:', error);
+        this.$Message.error('评论失败，请重试');
+      }
+    },
+
+    // 处理回复评论
+    handleReplyComment(replyData) {
+      // 这里可以处理特定的回复逻辑
+      console.log('回复评论:', replyData);
+      // 实际提交由handleSubmitComment处理
+    },
+
+    // 移除临时评论
+    removeTempComment(tempId) {
+      this.comments = this.comments.filter(comment => comment.id !== tempId);
+      if (this.tempComments[tempId]) {
+        delete this.tempComments[tempId];
+      }
+    },
+
+    // 处理评论数据
+    processComments(comments) {
+      // 先处理所有评论
+      const processedComments = comments.map(comment => this.processSingleComment(comment));
+
+      // 再次遍历，为回复评论设置replyToName（可能这次能找到父评论了）
+      return processedComments.map(comment => {
+        if (comment.parentId && !comment.replyToName) {
+          // 在当前批次的评论中查找父评论
+          const parentComment = processedComments.find(c => c.id === comment.parentId);
+          if (parentComment) {
+            comment.replyToName = parentComment.userName;
+          }
+        }
+        return comment;
+      });
+    },
+
+    // 处理单条评论
+    processSingleComment(comment) {
+      const processedComment = {
+        ...comment,
+        createTime: comment.createTime ? new Date(comment.createTime).toISOString() : new Date().toISOString(),
+        userName: this.maskPhoneNumber(comment.userName),
+        replyToName: comment.replyToName ? this.maskPhoneNumber(comment.replyToName) : undefined,
+        isTemp: false
+      };
+
+      // 如果是回复评论，尝试从现有评论中查找父评论的用户名
+      if (processedComment.parentId && !processedComment.replyToName) {
+        const parentComment = this.comments.find(c => c.id === processedComment.parentId);
+        if (parentComment) {
+          processedComment.replyToName = parentComment.userName;
+        }
+      }
+
+      return processedComment;
+    },
+
+    // 手机号脱敏
+    maskPhoneNumber(phone) {
+      if (!phone) return '用户';
+      const phoneRegex = /^1[3-9]\d{9}$/;
+      if (phoneRegex.test(phone.toString())) {
+        return phone.toString().replace(/(\d{3})\d{4}(\d{4})/, '$1****$2');
+      }
+      return phone;
+    },
+
+    // 关闭WebSocket连接
+    closeWebSocket() {
+      if (this.websocket) {
+        // 发送离开消息（如果有的话）
+        try {
+          const leaveMessage = {
+            type: 'leave',
+            liveStreamId: this.id,
+            userId: this.userId || 'guest'
+          };
+          this.websocket.send(JSON.stringify(leaveMessage));
+        } catch (error) {
+          console.log('发送离开消息失败（可能连接已断开）:', error);
+        }
+
+        // 关闭连接
+        this.websocket.close(1000, '正常关闭');
+        this.websocket = null;
+        this.wsConnected = false;
+        this.wsAuthenticated = false;
+      }
+    },
 
     // 处理窗口大小变化
     handleResize() {
-      // 移动端默认显示评论tab
-      if (window.innerWidth <= 768) {
+      this.isMobile = window.innerWidth <= 768;
+      if (this.isMobile) {
         this.activeTab = 'comments';
       }
     },
@@ -258,31 +786,86 @@ export default {
     },
 
     // 处理手机号登录成功
-    handlePhoneLoginSuccess(userInfo) {
-      console.log('手机号登录成功:', userInfo);
-      // 用户信息已经在 Vuex 中更新，watch 会监听到并执行相应操作
-      // 不需要额外处理，只需要关闭提示弹框（如果还显示的话）
+    handlePhoneLoginSuccess(loginData) {
+      const userInfo = loginData.userInfo || loginData;
+
+      if (userInfo) {
+        const user = userInfo.user || userInfo;
+        this.userId = user.id || user.userId || '';
+
+        this.$nextTick(async () => {
+          await this.loadRegistrationDataIfNeeded();
+
+          if (this.$refs.commentSection) {
+            this.$refs.commentSection.currentUserId = this.userId;
+          }
+
+          // 用户登录成功后，重新认证WebSocket连接
+          this.authenticateWebSocket();
+        });
+      }
+
       if (this.showLoginPromptModal) {
         this.showLoginPromptModal = false;
       }
     },
 
     async initPage() {
-      console.log('页面加载，开始初始化');
+      const isLoggedIn = await this.initUserInfo();
+
       this.tryLoadFromLocalStorage();
       await this.initFromUrlParams();
       this.cleanupExpiredLocalRegistrations();
-      this.initUserInfo();
 
-      // 处理微信授权回调
       await this.handleWechatCallback();
 
-      if (!this.hasAutoOpenedRegistration) {
+      if (isLoggedIn && this.userId) {
+        await this.loadRegistrationDataIfNeeded();
+      }
+
+      this.$nextTick(() => {
+        if (isLoggedIn && this.userId) {
+          if (this.$refs.commentSection) {
+            this.$refs.commentSection.currentUserId = this.userId;
+          }
+        }
+      });
+
+      if (!this.isRegistered && !this.hasAutoOpenedRegistration) {
+        await this.$nextTick();
         this.checkAutoOpenRegistration();
-        this.hasAutoOpenedRegistration = true;
       }
     },
 
+    // 初始化用户信息
+    async initUserInfo() {
+      try {
+        await this.$store.dispatch('checkLoginStatus');
+        const userLoggedIn = this.$store.getters.isLoggedIn;
+        const userInfo = this.$store.getters.userInfo;
+
+        if (userLoggedIn && userInfo) {
+          this.userId = userInfo.id || userInfo.userId || '';
+
+          this.$nextTick(() => {
+            if (this.$refs.commentSection) {
+              this.$refs.commentSection.currentUserId = this.userId;
+            }
+          });
+
+          await this.checkRegistrationStatus();
+          return true;
+        } else {
+          this.userId = '';
+          return false;
+        }
+      } catch (error) {
+        this.userId = '';
+        return false;
+      }
+    },
+
+    // 从localStorage加载数据
     tryLoadFromLocalStorage() {
       const urlParams = new URLSearchParams(window.location.search);
       const id = urlParams.get('id');
@@ -292,19 +875,20 @@ export default {
         if (localData) {
           try {
             const parsedData = JSON.parse(localData);
-            console.log('从本地存储预加载数据:', parsedData);
-            this.userId = parsedData.userId || '';
             this.isRegistered = !!parsedData.registrationId;
             this.registrationId = parsedData.registrationId || null;
+
+            if (this.isRegistered) {
+              this.hasAutoOpenedRegistration = true;
+            }
           } catch (e) {
-            console.error('解析本地存储数据失败:', e);
+            console.log('e', e);
           }
         }
       }
     },
 
     async initFromUrlParams() {
-      console.log('=== 开始解析URL参数 ===');
       const urlParams = new URLSearchParams(window.location.search);
       this.id = urlParams.get('id');
       this.streamType = urlParams.get('type');
@@ -314,41 +898,26 @@ export default {
         return;
       }
 
+      // 初始化WebSocket连接（游客身份）
+      this.initWebSocket();
+    },
+
+    // 获取报名表单数据
+    async fetchEntryFromData() {
+      if (!this.entryFromId) return;
+
       try {
-        await this.getStreamDataById(this.id);
+        // 这里根据实际API调用获取报名表单数据
+        // const res = await this.$api.getEntryFormById({ id: this.entryFromId });
+        // if (res.code === 200 && res.data) {
+        //   this.processEntryFromData(res.data);
+        // }
       } catch (error) {
-        console.error('获取流地址信息失败:', error);
-        this.$Message.error('获取直播信息失败，请检查网络连接');
+        console.error('获取报名表单数据失败:', error);
       }
     },
 
-    async getStreamDataById(id) {
-      console.log('调用接口获取流地址信息，ID:', id);
-      try {
-        const res = await this.$api.getById({ id: id });
-        if (res.code === 200) {
-          const data = res.data;
-          this.liveShowName = data.liveShowName;
-          this.startTime = data.startTime;
-          this.liveStatus = data.liveStatus;
-          this.isEntryFrom = data.isEntryFrom || '0';
-          this.entryFromId = data.entryFromId || '';
-          await this.processEntryFromData(data.entryFromData);
-
-          if (data.liveCover) {
-            this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`;
-          }
-
-          if (this.liveStatus === '1') {
-            this.parseStreamData(data);
-          }
-        }
-      } catch (error) {
-        console.error('获取直播信息失败:', error);
-        throw error;
-      }
-    },
-
+    // 处理报名表单数据
     async processEntryFromData(entryFromData) {
       if (!entryFromData || !Array.isArray(entryFromData)) {
         this.entryFromData = [];
@@ -389,79 +958,85 @@ export default {
           });
         }
 
-        if (field.type === 'phone') {
-          this.registrationRules[uniqueKey].push({
-            validator: (rule, value, callback) => {
-              if (!value) {
-                if (!field.required) callback();
-                else callback(new Error(`${field.name}不能为空`));
-                return;
-              }
-              const phonePattern = /^1[3-9]\d{9}$/;
-              if (!phonePattern.test(value)) {
-                callback(new Error('请输入正确的手机号码'));
-              } else {
-                callback();
-              }
-            },
-            trigger: []
-          });
-        } else if (field.type === 'idCard') {
-          this.registrationRules[uniqueKey].push({
-            validator: (rule, value, callback) => {
-              if (!value) {
-                if (!field.required) callback();
-                else callback(new Error(`${field.name}不能为空`));
-                return;
-              }
-              const idCardPattern = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/;
-              if (!idCardPattern.test(value)) {
-                callback(new Error('请输入正确的身份证号'));
-              } else {
-                callback();
-              }
-            },
-            trigger: []
-          });
-        } else if (field.type === 'email') {
-          this.registrationRules[uniqueKey].push({
-            validator: (rule, value, callback) => {
-              if (!value) {
-                if (!field.required) callback();
-                else callback(new Error(`${field.name}不能为空`));
-                return;
-              }
-              const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-              if (!emailPattern.test(value)) {
-                callback(new Error('请输入正确的邮箱地址'));
-              } else {
-                callback();
-              }
-            },
-            trigger: []
-          });
-        } else if (field.type === 'age') {
-          this.registrationRules[uniqueKey].push({
-            validator: (rule, value, callback) => {
-              if (!value) {
-                if (!field.required) callback();
-                else callback(new Error(`${field.name}不能为空`));
-                return;
-              }
-              const age = parseInt(value);
-              if (isNaN(age) || age < 0 || age > 150) {
-                callback(new Error('请输入有效的年龄(0-150)'));
-              } else {
-                callback();
-              }
-            },
-            trigger: []
-          });
-        }
+        // 字段验证规则
+        this.addFieldValidationRules(field, uniqueKey);
       });
 
       await this.fillFormDataFromLocalStorage();
       this.formInitialized = true;
+    },
+
+    // 添加字段验证规则
+    addFieldValidationRules(field, uniqueKey) {
+      if (field.type === 'phone') {
+        this.registrationRules[uniqueKey].push({
+          validator: (rule, value, callback) => {
+            if (!value) {
+              if (!field.required) callback();
+              else callback(new Error(`${field.name}不能为空`));
+              return;
+            }
+            const phonePattern = /^1[3-9]\d{9}$/;
+            if (!phonePattern.test(value)) {
+              callback(new Error('请输入正确的手机号码'));
+            } else {
+              callback();
+            }
+          },
+          trigger: []
+        });
+      } else if (field.type === 'idCard') {
+        this.registrationRules[uniqueKey].push({
+          validator: (rule, value, callback) => {
+            if (!value) {
+              if (!field.required) callback();
+              else callback(new Error(`${field.name}不能为空`));
+              return;
+            }
+            const idCardPattern = /(^\d{15}$)|(^\d{18}$)|(^\d{17}(\d|X|x)$)/;
+            if (!idCardPattern.test(value)) {
+              callback(new Error('请输入正确的身份证号'));
+            } else {
+              callback();
+            }
+          },
+          trigger: []
+        });
+      } else if (field.type === 'email') {
+        this.registrationRules[uniqueKey].push({
+          validator: (rule, value, callback) => {
+            if (!value) {
+              if (!field.required) callback();
+              else callback(new Error(`${field.name}不能为空`));
+              return;
+            }
+            const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailPattern.test(value)) {
+              callback(new Error('请输入正确的邮箱地址'));
+            } else {
+              callback();
+            }
+          },
+          trigger: []
+        });
+      } else if (field.type === 'age') {
+        this.registrationRules[uniqueKey].push({
+          validator: (rule, value, callback) => {
+            if (!value) {
+              if (!field.required) callback();
+              else callback(new Error(`${field.name}不能为空`));
+              return;
+            }
+            const age = parseInt(value);
+            if (isNaN(age) || age < 0 || age > 150) {
+              callback(new Error('请输入有效的年龄(0-150)'));
+            } else {
+              callback();
+            }
+          },
+          trigger: []
+        });
+      }
     },
 
     async fillFormDataFromLocalStorage() {
@@ -543,42 +1118,49 @@ export default {
     },
 
     async checkAutoOpenRegistration() {
-      console.log('检查自动打开报名表条件:', {
-        isEntryFrom: this.isEntryFrom,
-        entryFromData: this.entryFromData?.length,
-        userId: this.userId,
-        isRegistered: this.isRegistered,
-        isAutoOpenRegistration: this.isAutoOpenRegistration
-      });
-
-      if (this.userId) {
-        await this.checkRegistrationStatus();
-      }
-
       if (this.isEntryFrom === '1' &&
         this.entryFromData &&
-        this.entryFromData.length > 0 &&
-        !this.userId &&
-        !this.isRegistered &&
-        !this.isAutoOpenRegistration) {
+        this.entryFromData.length > 0) {
 
-        console.log('自动打开报名表和登录提示');
-        this.isAutoOpenRegistration = true;
-        this.showRegistrationModal = true;
-        this.$nextTick(() => {
+        const hasLocalRegistration = await this.checkLocalRegistration();
+
+        if (!hasLocalRegistration) {
+          console.log('用户未报名，自动打开报名表和登录提示');
+
           setTimeout(() => {
-            this.showLoginPromptModal = true;
-          }, 100);
-        });
-      } else if (this.isRegistered) {
-        console.log('本地已报名，不自动弹出报名表和登录提示');
+            this.showRegistrationModal = true;
+
+            this.$nextTick(() => {
+              setTimeout(() => {
+                if (!this.userId) {
+                  this.showLoginPromptModal = true;
+                }
+              }, 300);
+            });
+          }, 1000);
+        } else {
+          console.log('用户已报名，不自动弹出报名表');
+        }
+      }
+    },
+
+    async loadRegistrationDataIfNeeded() {
+      if (!this.userId) {
+        console.log('用户未登录，不加载报名数据');
+        return;
+      }
+
+      const hasLocalRegistration = await this.checkLocalRegistration();
+
+      if (hasLocalRegistration) {
+        await this.checkRegistrationStatus();
+      } else {
+        console.log('首次报名，不需要调用接口获取历史数据');
       }
     },
 
     async openRegistrationModal() {
-      console.log('用户点击报名表单按钮，当前用户ID:', this.userId);
       if (!this.entryFromData || this.entryFromData.length === 0) {
-        console.log('没有报名表数据');
         this.$Message.info('暂无报名表');
         return;
       }
@@ -595,18 +1177,14 @@ export default {
       } else {
         console.log('用户已登录，检查报名状态');
         await this.checkLocalRegistration();
-        await this.checkRegistrationStatus();
-        this.$nextTick(() => {
-          if (this.$refs.registrationForm) {
-            setTimeout(() => {
-              if (this.$refs.registrationForm) {
-                this.$refs.registrationForm.resetFields();
-                this.clearFormValidation();
-              }
-            }, 100);
-          }
-        });
       }
+    },
+
+    handleRegistrationSuccess(data) {
+      console.log('报名成功回调:', data);
+      this.isRegistered = true;
+      this.registrationId = data.registrationId;
+      this.hasAutoOpenedRegistration = true;
     },
 
     async checkLocalRegistration() {
@@ -616,6 +1194,7 @@ export default {
         if (localData) {
           const parsedData = JSON.parse(localData);
           console.log('从本地存储检查报名信息:', parsedData);
+
           if (parsedData.registrationId) {
             this.registrationId = parsedData.registrationId;
             this.isRegistered = true;
@@ -625,6 +1204,7 @@ export default {
             console.log('检查本地报名信息: 已报名，registrationId:', this.registrationId, 'entryFromId:', this.entryFromId);
             const registrationData = parsedData.registrationData || {};
             console.log('本地存储的中文数据:', registrationData);
+
             this.entryFromData.forEach(field => {
               if (!field.name) return;
               let value = '';
@@ -648,20 +1228,44 @@ export default {
               }
             });
             console.log('填充后的registrationData:', this.registrationData);
-            return;
+            return true;
           }
         }
         this.isRegistered = false;
         this.registrationId = null;
+        return false;
       } catch (error) {
         console.error('检查本地报名信息失败:', error);
         this.isRegistered = false;
         this.registrationId = null;
+        return false;
       }
     },
 
+    clearLocalRegistration() {
+      const storageKey = `registration_${this.id}`;
+      localStorage.removeItem(storageKey);
+      this.isRegistered = false;
+      this.registrationId = null;
+      console.log('已清除本地报名记录');
+    },
+
     async checkRegistrationStatus() {
-      if (!this.userId) return;
+      if (!this.userId) {
+        console.log('未登录，不检查报名状态');
+        return;
+      }
+
+      const hasLocalRegistration = await this.checkLocalRegistration();
+
+      if (!hasLocalRegistration) {
+        console.log('本地无报名记录，可能是首次报名，不调用getId接口');
+        this.isRegistered = false;
+        this.registrationId = null;
+        return;
+      }
+
+      console.log('本地有报名记录，调用接口验证状态');
       try {
         const res = await this.$api.getId({ liveId: this.id });
         if (res.code === 200 && res.data && res.data.length > 0) {
@@ -674,10 +1278,8 @@ export default {
           }
           await this.processServerJsonData(registrationRecord);
         } else {
-          if (!this.isRegistered) {
-            this.isRegistered = false;
-            this.registrationId = null;
-          }
+          console.log('服务器没有报名记录，但本地有，重置本地状态');
+          this.clearLocalRegistration();
         }
       } catch (error) {
         console.error('检查服务器报名状态失败:', error);
@@ -909,35 +1511,6 @@ export default {
       }
     },
 
-    // 初始化用户信息
-    async initUserInfo() {
-      try {
-        // 等待 checkLoginStatus 完成
-        await this.$store.dispatch('checkLoginStatus');
-
-        // 通过 getter 获取状态
-        const userLoggedIn = this.$store.getters.isLoggedIn;
-        const userIdFromStore = this.$store.getters.userId;
-
-        console.log('initUserInfo 检查结果:', {
-          用户是否登录: userLoggedIn,
-          用户ID: userIdFromStore,
-          本地存储: localStorage.getItem('userInfo')
-        });
-
-        if (userLoggedIn) {
-          this.userId = userIdFromStore;
-          console.log('✅ 用户已登录，用户ID:', this.userId);
-        } else {
-          // console.log('❌ 用户未登录');
-          this.userId = '';
-        }
-      } catch (error) {
-        console.error('检查登录状态失败:', error);
-        this.userId = '';
-      }
-    },
-
     // 处理微信授权回调
     async handleWechatCallback() {
       if (!this.isWechatBrowser) return;
@@ -948,44 +1521,48 @@ export default {
 
       if (code && state) {
         try {
-          // 验证 state
           const savedState = localStorage.getItem('wechat_auth_state');
           if (state !== savedState) {
-            console.error('state验证失败');
             return;
           }
 
-          console.log('处理微信授权回调，code:', code);
-          // 使用 Vuex action 处理微信登录
           const result = await this.$store.dispatch('wechatLogin', { code });
 
           if (result.success) {
-            // 更新用户ID
             this.userId = this.$store.getters.userId;
-            console.log('微信登录成功，用户ID:', this.userId);
-            this.$Message.success('登录成功');
 
-            // 清除微信授权状态
             localStorage.removeItem('wechat_auth_state');
-
-            // 清除URL中的code和state参数
             this.clearWechatAuthParams();
 
-            // 登录成功后，如果报名表弹框还在显示，更新表单数据
             if (this.showRegistrationModal) {
               await this.checkLocalRegistration();
               await this.checkRegistrationStatus();
             }
 
             this.showLoginPromptModal = false;
-          } else {
-            this.$Message.error(result.message || '微信登录失败');
+
+            this.$nextTick(() => {
+              if (this.$refs.commentSection) {
+                this.$refs.commentSection.currentUserId = this.userId;
+              }
+            });
+
+            // 微信登录成功后，重新认证WebSocket连接
+            this.authenticateWebSocket();
           }
         } catch (error) {
           console.error('微信授权回调处理失败:', error);
-          this.$Message.error('微信登录失败，请重试');
         }
       }
+    },
+
+    // 清理定时器
+    cleanup() {
+      // 清除WebSocket连接
+      this.closeWebSocket();
+
+      // 清理临时评论
+      this.tempComments = {};
     },
 
     // 清除URL中的微信授权参数
@@ -1025,11 +1602,9 @@ export default {
       this.showLoginPromptModal = false;
 
       if (this.isWechatBrowser) {
-        // 微信环境：使用微信授权登录
         console.log('微信环境，使用微信授权登录');
         this.wechatAuth();
       } else {
-        // 非微信环境：显示手机号登录弹框
         console.log('非微信环境，显示手机号登录弹框');
         this.$store.dispatch('showLoginModal');
       }
@@ -1040,10 +1615,8 @@ export default {
       console.log('需要登录，当前环境:', this.isWechatBrowser ? '微信' : '普通浏览器');
 
       if (this.isWechatBrowser) {
-        // 微信环境：直接使用微信授权
         this.wechatAuth();
       } else {
-        // 非微信环境：直接显示手机号登录弹框，不再显示提示弹框
         console.log('非微信环境，直接显示手机号登录弹框');
         this.$store.dispatch('showLoginModal');
       }
@@ -1076,26 +1649,9 @@ export default {
     },
 
     async refreshLiveStatus() {
-      if (!this.id) return;
-      try {
-        const res = await this.$api.getById({ id: this.id });
-        if (res.code === 200) {
-          const data = res.data;
-          const oldStatus = this.liveStatus;
-          const newStatus = data.liveStatus;
-          this.liveShowName = data.liveShowName;
-          this.startTime = data.startTime;
-          this.liveStatus = newStatus;
-          await this.processEntryFromData(data.entryFromData);
-          if (data.liveCover) {
-            this.coverImageUrl = `${config.playerBaseUrl}/api/sysFile/image/${data.liveCover}`;
-          }
-          if (oldStatus !== newStatus && newStatus === '1') {
-            await this.parseStreamData(data);
-          }
-        }
-      } catch (error) {
-        console.error('刷新直播状态失败:', error);
+      // 尝试重新连接WebSocket
+      if (!this.websocket || this.websocket.readyState !== WebSocket.OPEN) {
+        this.initWebSocket();
       }
     },
 
@@ -1120,18 +1676,43 @@ export default {
       this.onlineCount = data.onlineCount;
     },
 
-    cleanup() {
-      if (this.commentPollingTimer) {
-        clearInterval(this.commentPollingTimer);
-        this.commentPollingTimer = null;
-      }
-    }
+    // 刷新用户登录状态
+    refreshLoginStatus() {
+      console.log('刷新用户登录状态');
+      this.$store.dispatch('checkLoginStatus').then(() => {
+        const userInfo = this.$store.getters.userInfo;
+        if (userInfo) {
+          this.userId = userInfo.id || userInfo.userId;
+          console.log('刷新后用户ID:', this.userId);
+
+          this.$nextTick(() => {
+            if (this.$refs.commentSection) {
+              this.$refs.commentSection.currentUserId = this.userId;
+            }
+          });
+        }
+      });
+    },
+
+    handleLogout() {
+      this.$store.dispatch('logout').then(() => {
+        this.$Message.success('已退出登录');
+        // 重置页面状态
+        this.userId = '';
+        this.isRegistered = false;
+        this.registrationId = null;
+        this.clearLocalRegistration();
+
+        // 用户登出后，重新建立WebSocket连接（游客身份）
+        this.initWebSocket();
+      });
+    },
   }
 };
 </script>
 
 <style scoped>
-/* 保持原有的样式不变 */
+/* 样式保持不变 */
 .live-container {
   display: flex;
   max-width: 1200px;
@@ -1166,7 +1747,6 @@ export default {
 /* 移动端Tabs容器 */
 .mobile-tabs-section {
   display: none;
-  /* 默认隐藏，在移动端显示 */
 }
 
 /* 报名表单悬浮按钮 */
@@ -1346,7 +1926,6 @@ export default {
   .mobile-tabs {
     display: flex;
     background: #f8f8f8;
-    /* padding: 0 10px; */
     border-bottom: 1px solid #eee;
   }
 
@@ -1366,7 +1945,6 @@ export default {
 
   .tab-item.active {
     color: #1890ff;
-    /* font-weight: 600; */
     border-bottom-color: #1890ff;
     background: white;
   }
@@ -1407,7 +1985,6 @@ export default {
   }
 
   .tab-pane {
-    /* height: 400px; */
     overflow: hidden;
   }
 

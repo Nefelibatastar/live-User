@@ -12,7 +12,7 @@
     <h3 class="section-title">直播介绍</h3>
     <div class="intro-content">
       <slot name="intro">
-        <p>本次会议将围绕医院感染质量管理与控制展开深入讨论，分享最新研究成果和实践经验。会议采用线上线下相结合的方式，方便更多医疗工作者参与。欢迎各位医疗同仁积极参与交流！</p>
+        <p>{{ introduce }}</p>
       </slot>
     </div>
   </div>
@@ -27,6 +27,10 @@ export default {
       default: ''
     },
     startTime: {
+      type: String,
+      default: ''
+    },
+    introduce:{
       type: String,
       default: ''
     }

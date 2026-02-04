@@ -3,10 +3,9 @@ import Vue from 'vue'
 import Vuex from 'vuex'
 
 Vue.use(Vuex)
-
 export default new Vuex.Store({
   state: {
-    user: null,
+    user: null,  // 统一存储完整的用户信息（不再嵌套user字段）
     token: localStorage.getItem('token') || '',
     isLoginModalVisible: false,
     loginRedirectPath: '/'
@@ -15,6 +14,7 @@ export default new Vuex.Store({
   mutations: {
     SET_USER(state, user) {
       state.user = user
+      // 存储纯净的用户信息，避免嵌套
       localStorage.setItem('userInfo', JSON.stringify(user))
     },
 
@@ -40,19 +40,26 @@ export default new Vuex.Store({
   },
 
   actions: {
-    // 手机号登录
+    // 手机号登录 - 统一数据结构
     async login({ commit }, params) {
       try {
-        // 从 params 中解构参数
         const { phone, code } = params
-        const response = await this._vm.$api.userLogin({ phone, code })
+        const response = await this.$api.userLogin({ phone, code })
         if (response.code === 200) {
           const userData = response.data
-          const token = response.token || response.data?.token
-          commit('SET_USER', userData)
-          if (token) commit('SET_TOKEN', token)
+          const token = response.token || userData.token
+
+          // 统一存储结构：直接存储用户信息，不再嵌套user字段
+          const pureUserInfo = userData.user || userData
+          commit('SET_USER', pureUserInfo)
+          
+          // 确保token正确存储
+          if (token) {
+            commit('SET_TOKEN', token)
+          }
+          
           commit('SET_LOGIN_MODAL_VISIBLE', false)
-          return { success: true, data: userData }
+          return { success: true, data: pureUserInfo }
         } else {
           return { success: false, message: response.message || '登录失败' }
         }
@@ -62,28 +69,22 @@ export default new Vuex.Store({
       }
     },
 
-    // 发送验证码 - 修正参数接收方式
-    async sendCode(context, params) {
-      try {
-        // 从 params 中解构 phone
-        const { phone } = params
-        const response = await context._vm.$api.sendCode({ phone })
-        return { success: response.code === 200 }
-      } catch (error) {
-        console.error('发送验证码失败:', error)
-        return { success: false }
-      }
-    },
-
+    // 微信登录 - 统一数据结构
     async wechatLogin({ commit }, params) {
       try {
         const { code } = params
-        const response = await this._vm.$api.wechatLogin({ code })
+        const response = await this.$api.wechatLogin({ code })
         if (response.code === 200 && response.data) {
           const userData = response.data
-          commit('SET_USER', userData)
-          if (response.token) commit('SET_TOKEN', response.token)
-          return { success: true, data: userData }
+          // 统一存储结构
+          const pureUserInfo = userData.user || userData
+          commit('SET_USER', pureUserInfo)
+          
+          if (response.token) {
+            commit('SET_TOKEN', response.token)
+          }
+          
+          return { success: true, data: pureUserInfo }
         } else {
           return { success: false, message: response.message || '微信登录失败' }
         }
@@ -93,57 +94,70 @@ export default new Vuex.Store({
       }
     },
 
-    // 显示登录弹框
+    //  ：检查登录状态（核心修改）
+    checkLoginStatus({ commit, state }) {
+      // 关键：移除先清空的逻辑，避免覆盖有效状态
+      if (state.user && state.token) {
+        return Promise.resolve(true) // 已有有效状态，直接返回
+      }
+
+      // 从localStorage读取
+      const userInfoStr = localStorage.getItem('userInfo');
+      const token = localStorage.getItem('token');
+
+      // 只有同时存在userInfo和token时才恢复状态
+      if (userInfoStr && token) {
+        try {
+          const user = JSON.parse(userInfoStr);
+          // 宽松的校验逻辑：只要有id/用户标识就认为有效
+          if (user && (user.id || user.userId)) {
+            commit('SET_USER', user);
+            commit('SET_TOKEN', token);
+            return Promise.resolve(true);
+          } else {
+            // 数据不完整，清空
+            commit('CLEAR_USER');
+            return Promise.resolve(false);
+          }
+        } catch (e) {
+          console.error('解析用户信息失败:', e);
+          commit('CLEAR_USER');
+          return Promise.resolve(false);
+        }
+      }
+      // 无本地数据，返回未登录
+      return Promise.resolve(false);
+    },
+
+    logout({ commit }) {
+      commit('CLEAR_USER');
+      return Promise.resolve(true);
+    },
+
     showLoginModal({ commit }, redirectPath = null) {
       if (redirectPath) commit('SET_LOGIN_REDIRECT_PATH', redirectPath)
       commit('SET_LOGIN_MODAL_VISIBLE', true)
     },
 
-    // 隐藏登录弹框
     hideLoginModal({ commit }) {
       commit('SET_LOGIN_MODAL_VISIBLE', false)
     },
-
-    // 检查登录状态
-    checkLoginStatus({ commit }) {
-      const userInfo = localStorage.getItem('userInfo');
-      const token = localStorage.getItem('token');
-
-      if (userInfo) {
-        try {
-          const user = JSON.parse(userInfo);
-          commit('SET_USER', user);
-          if (token) commit('SET_TOKEN', token);
-          return true; // 返回布尔值
-        } catch (e) {
-          console.error('解析用户信息失败:', e);
-          commit('CLEAR_USER');
-          return false; // 返回布尔值
-        }
-      }
-      return false; // 返回布尔值
-    },
-
-    // 退出登录
-    logout({ commit }) {
-      commit('CLEAR_USER')
-      commit('SET_LOGIN_REDIRECT_PATH', '/')
-      // 可以跳转到首页
-      window.location.href = '/'
-    }
   },
 
   getters: {
+    // 简化：直接返回纯净的用户信息
     userInfo: state => state.user,
+
+    // 简化：获取用户ID
     userId: state => {
-      // console.log('Vuex getter userId 调用，state.user:', state.user);
-      return state.user?.user.id || state.user?.user.userId || '';
+      return state.user?.id || state.user?.userId || ''
     },
+
+    // 简化：判断是否登录
     isLoggedIn: state => {
-      const isLogged = !!state.user?.user;
-      // console.log('Vuex getter isLoggedIn 调用:', isLogged);
-      return isLogged;
+      return !!state.user && !!state.token
     },
+
     isLoginModalVisible: state => state.isLoginModalVisible,
     loginRedirectPath: state => state.loginRedirectPath
   }

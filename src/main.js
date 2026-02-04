@@ -23,7 +23,6 @@ import api from './api/api';
 Vue.prototype.$api = api;
 
 Vue.config.productionTip = false
-
 new Vue({
   router,
   store,

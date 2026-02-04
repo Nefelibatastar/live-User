@@ -2,13 +2,15 @@
 import axios from 'axios'
 import Vue from 'vue'
 import { Message } from 'iview'
+import store from '../store'
+import {config} from '../config'
 // import routes from '../routes'
 
 
 // 创建axios实例
 const service = axios.create({
-  baseURL: 'http://192.168.3.37:8082', // 基础URL，可根据环境配置
-  // baseURL: 'http://lives.hbjcws.com.cn/api',
+  // baseURL: 'http://192.168.3.37:8082', // 基础URL，可根据环境配置
+  baseURL: config.apiBaseUrl,
   timeout: 5000 // 请求超时时间
 })
 
@@ -40,20 +42,16 @@ service.interceptors.response.use(
   },
   error => {
     console.error('响应错误:', error)
-    // if (error.response && error.response.status === 401) {
-    //   // 提示登录失效
-    //   Message.error('登录已失效，请重新登录')
-    //   // 清除本地存储的token和用户信息
-    //   localStorage.removeItem('admin_token')
-    //   localStorage.removeItem('userInfo')
-    //   localStorage.removeItem('userName')
-    //   // 跳转到登录页
-    //   router.push('/login')
-    // } else {
-    //   return Promise.reject(new Error(res.message || 'Error'));
-    // }
-
-    return Promise.reject(error)
+    if (error.response && error.response.status === 401) {
+      // 401时先提示，再清空状态（避免同步执行导致的状态混乱）
+      setTimeout(() => {
+        store.commit('CLEAR_USER');
+        Vue.prototype.$Message.error('登录已失效，请重新登录');
+      }, 0);
+      return Promise.reject('登录失效');
+    }
+    // Message.error(error.message || '请求失败，请重试')
+    // return Promise.reject(error)
   }
 )
 
