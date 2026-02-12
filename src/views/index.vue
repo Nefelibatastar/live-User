@@ -1610,16 +1610,16 @@ export default {
       }
     },
 
-    // 处理需要登录 - 区分环境
+    // 处理需要登录 - 区分环境（暂不区分）
     handleRequireLogin() {
       console.log('需要登录，当前环境:', this.isWechatBrowser ? '微信' : '普通浏览器');
 
-      if (this.isWechatBrowser) {
-        this.wechatAuth();
-      } else {
-        console.log('非微信环境，直接显示手机号登录弹框');
+      // if (this.isWechatBrowser) {
+        // this.wechatAuth();
+      // } else {
+        // console.log('非微信环境，直接显示手机号登录弹框');
         this.$store.dispatch('showLoginModal');
-      }
+      // }
     },
 
     async parseStreamData(data) {
